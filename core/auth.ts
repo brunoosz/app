@@ -47,6 +47,12 @@ export class AuthService {
     return safeEqual(this.platform.hashPassword(password, salt), hash);
   }
 
+  /** Usados pela nuvem para guardar a senha também neste aparelho (login sem internet). */
+  readonly localPassword = {
+    verify: (u: UserRecord, pw: string) => this.verifyPassword(pw, u.salt, u.passwordHash),
+    hash: (pw: string) => this.hashPassword(pw),
+  };
+
   hasUsers(): boolean {
     return this.store.users.length > 0;
   }
@@ -145,6 +151,21 @@ export class AuthService {
     }
     this.store.save();
     return this.store.toPublic(user);
+  }
+
+  validateNew(input: NewUserInput): void {
+    validateName(String(input.name ?? ""));
+    validateUsername(String(input.username ?? "").trim());
+    validatePassword(String(input.password ?? ""));
+    if (input.email && !EMAIL_RE.test(input.email.trim())) throw new AppError("INVALID_EMAIL", "E-mail inválido.");
+  }
+
+  validatePasswordOnly(password: string): void {
+    validatePassword(password);
+  }
+
+  requireManager(actorId: string): UserRecord {
+    return this.actor(actorId);
   }
 
   // ---- administração ----

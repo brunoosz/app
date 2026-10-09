@@ -1,6 +1,7 @@
 import type { AlertRuntimeState, AppNotification, PublicUser, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { defaultUserData } from "@shared/defaults";
 import type { FileStore } from "./platform";
+import type { CloudState } from "./cloud";
 
 const DB_FILE = "investa-data.json";
 const BACKUP_FILE = "investa-data.bak.json";
@@ -51,6 +52,7 @@ interface DBShape {
     ai?: AiStoredConfig;
     session?: { userId: string; token: string; expiresAt: string };
     lastTheme?: "dark" | "light";
+    cloud?: CloudState;
   };
 }
 
@@ -123,6 +125,30 @@ export class Store {
   addUser(u: UserRecord): void {
     this.db.users.push(u);
     this.db.data[u.id] = {};
+    this.save();
+  }
+
+  /** Troca o id de uma conta local (quando ela passa a ser a mesma conta da nuvem). */
+  rekeyUser(oldId: string, newId: string): void {
+    const u = this.findUser(oldId);
+    if (!u || oldId === newId) return;
+    u.id = newId;
+    for (const table of [this.db.data, this.db.notifications, this.db.engine] as Record<string, unknown>[]) {
+      if (table[oldId] !== undefined) {
+        table[newId] = table[oldId];
+        delete table[oldId];
+      }
+    }
+    if (this.db.app.session?.userId === oldId) this.db.app.session.userId = newId;
+    this.save();
+  }
+
+  rawData(userId: string): Partial<UserDataMap> {
+    return this.db.data[userId] ?? {};
+  }
+
+  replaceData(userId: string, data: Partial<UserDataMap>): void {
+    this.db.data[userId] = { ...data };
     this.save();
   }
 

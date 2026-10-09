@@ -51,6 +51,11 @@ jobs:
     name: Instalador Windows (.exe)
     runs-on: windows-latest
     timeout-minutes: 40
+    # Nuvem (Supabase): Settings → Secrets and variables → Actions. Sem os
+    # segredos, o app sai com contas só locais.
+    env:
+      INVESTA_CLOUD_URL: ${{ secrets.INVESTA_CLOUD_URL }}
+      INVESTA_CLOUD_KEY: ${{ secrets.INVESTA_CLOUD_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -104,6 +109,11 @@ jobs:
     timeout-minutes: 40
     # Publica na mesma release criada pelo job do Windows.
     needs: windows
+    # Nuvem (Supabase): Settings → Secrets and variables → Actions. Sem os
+    # segredos, o app sai com contas só locais.
+    env:
+      INVESTA_CLOUD_URL: ${{ secrets.INVESTA_CLOUD_URL }}
+      INVESTA_CLOUD_KEY: ${{ secrets.INVESTA_CLOUD_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

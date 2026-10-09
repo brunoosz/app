@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, CheckCheck, LogOut, Menu, Search } from "lucide-react";
 import clsx from "clsx";
-import type { AppNotification } from "@shared/types";
+import type { AppNotification, PublicUser } from "@shared/types";
 import { api, platform } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { isManager, useSession } from "@/store/session";
@@ -213,9 +213,21 @@ export function AppLayout() {
       if (document.hasFocus()) toast({ title: n.title, message: n.message, tone: n.tone === "negative" ? "error" : n.tone === "positive" ? "success" : "info", action: n.link ? { label: "Ver", to: n.link } : undefined });
     });
     const offNav = api.on<string>("navigate", (path) => navigate(path));
+    // Mudanças feitas em outro aparelho chegaram pela nuvem.
+    const offData = api.on<PublicUser | null>("data:changed", (user) => {
+      const s = useSession.getState();
+      if (!user || !s.user) return;
+      void api.data.getAll().then((data) => useSession.setState({ user: { ...s.user!, ...user }, data }));
+    });
+    const offEnded = api.on<string>("session:ended", (message) => {
+      void useSession.getState().signOut();
+      toast({ title: "Sessão encerrada", message, tone: "error" });
+    });
     return () => {
       offNew();
       offNav();
+      offData();
+      offEnded();
     };
   }, [navigate, setNotifications, toast]);
 
