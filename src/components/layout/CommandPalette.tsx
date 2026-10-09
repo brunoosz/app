@@ -1,0 +1,147 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowRight, BookOpen, ChartCandlestick, Search } from "lucide-react";
+import clsx from "clsx";
+import type { SearchResult } from "@shared/types";
+import { CATEGORIES, displaySymbol } from "@shared/catalog";
+import { ALL_LESSONS } from "@shared/learning";
+import { api } from "@/lib/api";
+import { isManager, useSession } from "@/store/session";
+import { ALL_NAV } from "./nav";
+
+interface Item {
+  id: string;
+  label: string;
+  hint?: string;
+  icon: typeof Search;
+  to: string;
+  group: string;
+}
+
+function norm(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [assets, setAssets] = useState<SearchResult[]>([]);
+  const [index, setIndex] = useState(0);
+  const navigate = useNavigate();
+  const user = useSession((s) => s.user);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setQ("");
+      setAssets([]);
+      setIndex(0);
+      setTimeout(() => inputRef.current?.focus(), 30);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || q.trim().length < 2) {
+      setAssets([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      api.market.search(q.trim()).then(setAssets).catch(() => setAssets([]));
+    }, 220);
+    return () => clearTimeout(t);
+  }, [q, open]);
+
+  const items = useMemo<Item[]>(() => {
+    const term = norm(q.trim());
+    const pages = ALL_NAV.filter((n) => !n.managerOnly || isManager(user))
+      .filter((n) => !term || norm(n.label).includes(term))
+      .map((n) => ({ id: `p-${n.to}`, label: n.label, icon: n.icon, to: n.to, group: "Páginas" }));
+    const lessons = term
+      ? ALL_LESSONS.filter((l) => norm(l.lesson.title).includes(term) || norm(l.module.title).includes(term))
+          .slice(0, 4)
+          .map((l) => ({ id: `l-${l.lesson.id}`, label: l.lesson.title, hint: l.module.title, icon: BookOpen, to: `/aula/${l.lesson.id}`, group: "Aulas" }))
+      : [];
+    const assetItems = assets.slice(0, 8).map((a) => ({
+      id: `a-${a.symbol}`,
+      label: displaySymbol(a.symbol),
+      hint: `${a.name} · ${CATEGORIES.find((c) => c.id === a.category)?.label ?? a.exchange}`,
+      icon: ChartCandlestick,
+      to: `/mercado/${encodeURIComponent(a.symbol)}`,
+      group: "Ativos",
+    }));
+    return [...assetItems, ...pages, ...lessons];
+  }, [q, assets, user]);
+
+  useEffect(() => setIndex(0), [items.length]);
+
+  const go = (item: Item | undefined) => {
+    if (!item) return;
+    navigate(item.to);
+    onClose();
+  };
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] px-4 no-drag">
+          <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-[4px]" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+          <motion.div
+            initial={{ opacity: 0, y: -12, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 500, damping: 36 }}
+            className="relative w-full max-w-[620px] glass border border-line/15 rounded-3xl shadow-2xl overflow-hidden"
+          >
+            <div className="flex items-center gap-3 px-5 h-[60px] border-b border-line/10">
+              <Search size={20} className="text-muted" />
+              <input
+                ref={inputRef}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setIndex((i) => Math.min(items.length - 1, i + 1));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setIndex((i) => Math.max(0, i - 1));
+                  } else if (e.key === "Enter") {
+                    go(items[index]);
+                  } else if (e.key === "Escape") onClose();
+                }}
+                placeholder="Busque ações, FIIs, cripto, páginas ou aulas…"
+                className="flex-1 bg-transparent outline-none text-[16px] placeholder:text-muted/70"
+              />
+              <kbd className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-line/10 text-muted">Esc</kbd>
+            </div>
+            <div className="max-h-[420px] overflow-y-auto py-2">
+              {items.length === 0 && <div className="px-5 py-8 text-center text-muted text-[14px]">Nada encontrado para “{q}”.</div>}
+              {items.map((item, i) => {
+                const prev = items[i - 1];
+                const Icon = item.icon;
+                return (
+                  <div key={item.id}>
+                    {(!prev || prev.group !== item.group) && <div className="px-5 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted/70">{item.group}</div>}
+                    <button
+                      onMouseEnter={() => setIndex(i)}
+                      onClick={() => go(item)}
+                      className={clsx("w-full flex items-center gap-3 px-5 py-2.5 text-left", i === index && "bg-primary/10")}
+                    >
+                      <Icon size={18} className={i === index ? "text-primary" : "text-muted"} />
+                      <span className="font-medium text-[14.5px]">{item.label}</span>
+                      {item.hint && <span className="text-[13px] text-muted truncate">{item.hint}</span>}
+                      <span className="flex-1" />
+                      {i === index && <ArrowRight size={16} className="text-primary" />}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
+}

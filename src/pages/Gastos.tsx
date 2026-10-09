@@ -1,0 +1,386 @@
+import { useMemo, useState } from "react";
+import {
+  Briefcase,
+  Bus,
+  ChevronLeft,
+  ChevronRight,
+  FileSpreadsheet,
+  FileText,
+  Gift,
+  GraduationCap,
+  HeartPulse,
+  House,
+  PawPrint,
+  Plane,
+  Plus,
+  Receipt,
+  Repeat,
+  ShoppingBag,
+  ShoppingCart,
+  Ticket,
+  Trash,
+  Utensils,
+  Wallet,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import clsx from "clsx";
+import type { Expense, PaymentMethod } from "@shared/types";
+import { addMonthsYm, currentYm, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry } from "@shared/finance";
+import { institutionLabel } from "@shared/banks";
+import { api, uid } from "@/lib/api";
+import { brl, dateBR, pct } from "@/lib/format";
+import { useSession, useUserData } from "@/store/session";
+import { toastError, useUi } from "@/store/ui";
+import { Card, EmptyState, PageHeader, ProgressBar, SectionTitle } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/Button";
+import { Chip, Field, Input, MoneyInput, SegmentedControl, Select } from "@/components/ui/form";
+import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
+import { BarList, Donut, Legend, PALETTE } from "@/components/charts/small";
+import { InstitutionSelect } from "@/components/market";
+
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  Moradia: House,
+  Alimentação: Utensils,
+  Mercado: ShoppingCart,
+  Transporte: Bus,
+  Saúde: HeartPulse,
+  Educação: GraduationCap,
+  Lazer: Ticket,
+  Compras: ShoppingBag,
+  Assinaturas: Repeat,
+  Contas: Zap,
+  Viagem: Plane,
+  Pets: PawPrint,
+  Presentes: Gift,
+  "Salário extra": Briefcase,
+  Freelance: Briefcase,
+};
+
+function catColor(category: string): string {
+  const all = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
+  return PALETTE[Math.max(0, all.indexOf(category)) % PALETTE.length];
+}
+
+function emptyExpense(type: Expense["type"] = "despesa"): Expense {
+  return {
+    id: uid(),
+    type,
+    description: "",
+    amount: 0,
+    date: new Date().toISOString().slice(0, 10),
+    category: type === "despesa" ? "Alimentação" : "Freelance",
+    method: type === "despesa" ? "credito" : "pix",
+    institution: "",
+    installments: 1,
+  };
+}
+
+function ExpenseSheet({ open, initial, onClose, onDelete }: { open: boolean; initial: Expense | null; onClose: () => void; onDelete: (e: Expense) => void }) {
+  const update = useSession((s) => s.update);
+  const toast = useUi((s) => s.toast);
+  const [e, setE] = useState<Expense>(initial ?? emptyExpense());
+  const [lastOpen, setLastOpen] = useState(false);
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (open) setE(initial ? { ...initial } : emptyExpense());
+  }
+  const cats = e.type === "despesa" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const valid = e.description.trim() && e.amount > 0 && e.date;
+  const save = () => {
+    const item = { ...e, description: e.description.trim(), installments: e.method === "credito" ? e.installments : 1 };
+    update("expenses", (list) => (list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list]));
+    toast({ title: initial ? "Lançamento atualizado" : "Lançamento adicionado", tone: "success" });
+    onClose();
+  };
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={initial ? "Editar lançamento" : "Novo lançamento"}
+      footer={
+        <>
+          {initial && (
+            <Button variant="danger" icon={Trash} className="mr-auto" onClick={() => onDelete(initial)}>
+              Excluir
+            </Button>
+          )}
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={save} disabled={!valid}>
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <SegmentedControl<Expense["type"]>
+          block
+          value={e.type}
+          onChange={(t) => setE({ ...emptyExpense(t), id: e.id, description: e.description, amount: e.amount, date: e.date })}
+          options={[
+            { value: "despesa", label: "Gasto" },
+            { value: "receita", label: "Receita extra" },
+          ]}
+        />
+        <Field label="Descrição">
+          <Input autoFocus value={e.description} onChange={(ev) => setE({ ...e, description: ev.target.value })} placeholder={e.type === "despesa" ? "Ex.: Tênis novo" : "Ex.: Freela de design"} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={e.installments > 1 ? "Valor total da compra" : "Valor"}>
+            <MoneyInput value={e.amount} onChange={(v) => setE({ ...e, amount: v })} />
+          </Field>
+          <Field label="Data">
+            <Input type="date" value={e.date} onChange={(ev) => setE({ ...e, date: ev.target.value })} />
+          </Field>
+        </div>
+        <Field label="Categoria">
+          <div className="flex flex-wrap gap-1.5">
+            {cats.map((c) => (
+              <Chip key={c} active={e.category === c} icon={CATEGORY_ICON[c]} onClick={() => setE({ ...e, category: c })}>
+                {c}
+              </Chip>
+            ))}
+          </div>
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={e.type === "despesa" ? "Forma de pagamento" : "Como recebeu"}>
+            <Select value={e.method} onChange={(ev) => setE({ ...e, method: ev.target.value as PaymentMethod, installments: ev.target.value === "credito" ? e.installments : 1 })}>
+              {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
+                <option key={m} value={m}>
+                  {PAYMENT_LABEL[m]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Banco / cartão">
+            <InstitutionSelect value={e.institution} onChange={(v) => setE({ ...e, institution: v })} />
+          </Field>
+        </div>
+        {e.type === "despesa" && e.method === "credito" && (
+          <Field label="Parcelamento" hint={e.installments > 1 && e.amount > 0 ? `${e.installments}x de ${brl(e.amount / e.installments)} — a primeira parcela entra no mês da compra.` : "À vista no cartão."}>
+            <Select value={e.installments} onChange={(ev) => setE({ ...e, installments: Number(ev.target.value) })}>
+              {Array.from({ length: 24 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n === 1 ? "À vista" : `${n}x`}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+function EntryRow({ entry, onClick }: { entry: MonthEntry; onClick: () => void }) {
+  const e = entry.expense;
+  const Icon = CATEGORY_ICON[e.category] ?? (e.type === "receita" ? Wallet : Receipt);
+  const color = catColor(e.category);
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-line/[0.03] text-left">
+      <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}1f`, color }}>
+        <Icon size={18} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate">{e.description}</div>
+        <div className="text-[12.5px] text-muted truncate">
+          {e.category} · {PAYMENT_LABEL[e.method]}
+          {e.institution ? ` · ${institutionLabel(e.institution)}` : ""}
+          {entry.totalInstallments > 1 ? ` · parcela ${entry.installment}/${entry.totalInstallments}` : ""}
+        </div>
+      </div>
+      <div className={clsx("font-semibold tabular", e.type === "receita" ? "text-success" : "")}>
+        {e.type === "receita" ? "+" : "−"} {brl(entry.amount)}
+      </div>
+    </button>
+  );
+}
+
+export function Gastos() {
+  const expenses = useUserData("expenses");
+  const profile = useUserData("profile");
+  const update = useSession((s) => s.update);
+  const toast = useUi((s) => s.toast);
+  const [ym, setYm] = useState(currentYm());
+  const [sheet, setSheet] = useState<{ open: boolean; item: Expense | null }>({ open: false, item: null });
+  const [toDelete, setToDelete] = useState<Expense | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
+  const summary = useMemo(() => summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), [expenses, ym, profile.salary, profile.extraIncome]);
+  const planned = profile.fixedExpenses + profile.variableExpenses;
+  const donut = summary.byCategory.map((c) => ({ label: c.category, value: c.total, color: catColor(c.category) }));
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, MonthEntry[]>();
+    for (const e of summary.entries) {
+      const key = e.totalInstallments > 1 && e.installment > 1 ? "Parcelas de compras anteriores" : dateBR(e.expense.date, { weekday: "long", day: "numeric", month: "long" });
+      map.set(key, [...(map.get(key) ?? []), e]);
+    }
+    return [...map.entries()];
+  }, [summary.entries]);
+
+  const doExport = async (format: "pdf" | "xlsx") => {
+    setExporting(format);
+    try {
+      const res = await api.exportReport(ym, format);
+      if (res) toast({ title: "Relatório salvo", message: res.path, tone: "success" });
+    } catch (err) {
+      toastError(err, "Não foi possível exportar");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Gastos"
+        subtitle="Registre compras (inclusive parceladas), veja para onde vai seu dinheiro e baixe o relatório do mês."
+        actions={
+          <>
+            <Button variant="secondary" icon={FileText} loading={exporting === "pdf"} onClick={() => void doExport("pdf")}>
+              PDF
+            </Button>
+            <Button variant="secondary" icon={FileSpreadsheet} loading={exporting === "xlsx"} onClick={() => void doExport("xlsx")}>
+              Excel
+            </Button>
+            <Button icon={Plus} onClick={() => setSheet({ open: true, item: null })}>
+              Novo lançamento
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex items-center gap-2 mb-4">
+        <Button size="icon" variant="secondary" onClick={() => setYm(addMonthsYm(ym, -1))} aria-label="Mês anterior">
+          <ChevronLeft size={18} />
+        </Button>
+        <div className="min-w-[180px] text-center font-semibold text-[17px] capitalize">{ymLabel(ym)}</div>
+        <Button size="icon" variant="secondary" onClick={() => setYm(addMonthsYm(ym, 1))} aria-label="Próximo mês">
+          <ChevronRight size={18} />
+        </Button>
+        {ym !== currentYm() && (
+          <Button size="sm" variant="ghost" onClick={() => setYm(currentYm())}>
+            Hoje
+          </Button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <Card>
+          <div className="text-[13px] text-muted">Renda do mês</div>
+          <div className="text-[22px] font-bold tabular mt-1">{brl(summary.income + summary.extraIncome)}</div>
+          {summary.extraIncome > 0 && <div className="text-[12.5px] text-success">+ {brl(summary.extraIncome)} extras</div>}
+        </Card>
+        <Card>
+          <div className="text-[13px] text-muted">Gastos</div>
+          <div className="text-[22px] font-bold tabular mt-1">{brl(summary.spent)}</div>
+          {planned > 0 && (
+            <>
+              <ProgressBar value={summary.spent / planned} className="mt-2" height={6} color={summary.spent > planned ? "rgb(var(--danger))" : undefined} />
+              <div className="text-[12px] text-muted mt-1">{pct((summary.spent / planned) * 100, 0, false)} do planejado ({brl(planned)})</div>
+            </>
+          )}
+        </Card>
+        <Card>
+          <div className="text-[13px] text-muted">Saldo</div>
+          <div className={clsx("text-[22px] font-bold tabular mt-1", summary.balance >= 0 ? "text-success" : "text-danger")}>{brl(summary.balance)}</div>
+          <div className="text-[12.5px] text-muted">{summary.balance >= 0 ? "dá para investir" : "gastou mais do que ganhou"}</div>
+        </Card>
+        <Card>
+          <div className="text-[13px] text-muted">Parcelas futuras</div>
+          <div className="text-[22px] font-bold tabular mt-1">{brl(summary.futureInstallments.reduce((s, f) => s + f.total, 0))}</div>
+          <div className="text-[12.5px] text-muted">nos próximos 6 meses</div>
+        </Card>
+      </div>
+
+      {summary.entries.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={Receipt}
+            title="Nenhum lançamento neste mês"
+            description="Registre o que você gasta — por exemplo: “comprei um celular em 10x no cartão do Nubank”. O Investa distribui as parcelas nos próximos meses."
+            action={
+              <Button icon={Plus} onClick={() => setSheet({ open: true, item: null })}>
+                Adicionar gasto
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card padded={false} className="lg:col-span-2 overflow-hidden">
+            {grouped.map(([day, list]) => (
+              <div key={day}>
+                <div className="px-5 pt-4 pb-1 text-[12.5px] font-semibold text-muted capitalize">{day}</div>
+                <div className="divide-y divide-line/[0.06]">
+                  {list.map((entry) => (
+                    <EntryRow key={`${entry.expense.id}-${entry.installment}`} entry={entry} onClick={() => setSheet({ open: true, item: entry.expense })} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Card>
+          <div className="space-y-4">
+            <Card>
+              <SectionTitle title="Por categoria" />
+              {donut.length ? (
+                <div className="flex flex-col items-center gap-4">
+                  <Donut data={donut} size={160} center={<div className="text-[14px] font-bold">{brl(summary.spent).replace(/,\d+$/, "")}</div>} />
+                  <div className="w-full">
+                    <Legend data={donut} format={(v) => brl(v).replace(/,\d+$/, "")} />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[14px] text-muted">Sem gastos neste mês.</div>
+              )}
+            </Card>
+            {summary.byInstitution.length > 0 && (
+              <Card>
+                <SectionTitle title="Por banco / cartão" />
+                <BarList data={summary.byInstitution.map((b) => ({ key: b.institution, label: institutionLabel(b.institution) || "Não informado", value: b.total }))} format={(v) => brl(v)} />
+              </Card>
+            )}
+            {summary.futureInstallments.length > 0 && (
+              <Card>
+                <SectionTitle title="Próximas faturas (parcelas)" />
+                <div className="space-y-2">
+                  {summary.futureInstallments.map((f) => (
+                    <div key={f.ym} className="flex justify-between text-[14px]">
+                      <span className="capitalize text-muted">{ymLabel(f.ym)}</span>
+                      <span className="font-semibold tabular">{brl(f.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      <ExpenseSheet
+        open={sheet.open}
+        initial={sheet.item}
+        onClose={() => setSheet({ open: false, item: null })}
+        onDelete={(e) => {
+          setSheet({ open: false, item: null });
+          setToDelete(e);
+        }}
+      />
+      <ConfirmDialog
+        open={!!toDelete}
+        onClose={() => setToDelete(null)}
+        onConfirm={() => {
+          if (toDelete) update("expenses", (l) => l.filter((x) => x.id !== toDelete.id));
+          setToDelete(null);
+          toast({ title: "Lançamento excluído", tone: "success" });
+        }}
+        title="Excluir lançamento?"
+        message={toDelete ? `“${toDelete.description}”${toDelete.installments > 1 ? ` e todas as ${toDelete.installments} parcelas` : ""} será removido.` : ""}
+        confirmLabel="Excluir"
+        danger
+      />
+    </div>
+  );
+}
