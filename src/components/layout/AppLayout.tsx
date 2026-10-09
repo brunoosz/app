@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, CheckCheck, LogOut, Menu, Search } from "lucide-react";
+import { Bell, CheckCheck, Eye, EyeOff, LogOut, Menu, Search } from "lucide-react";
 import clsx from "clsx";
 import type { AppNotification, PublicUser } from "@shared/types";
 import { api, platform } from "@/lib/api";
@@ -103,6 +103,7 @@ function TitleBar({ onSearch }: { onSearch: () => void }) {
         <span className="flex-1 text-left">Buscar ativos, páginas…</span>
         <kbd className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-line/10">Ctrl K</kbd>
       </button>
+      <PrivacyButton />
       <button onClick={onSearch} className="no-drag md:hidden h-9 w-9 rounded-xl flex items-center justify-center text-muted hover:text-fg hover:bg-line/10" aria-label="Buscar">
         <Search size={18} />
       </button>
@@ -124,6 +125,42 @@ function TitleBar({ onSearch }: { onSearch: () => void }) {
         <AnimatePresence>{open && <NotificationsPopover onClose={() => setOpen(false)} />}</AnimatePresence>
       </div>
     </header>
+  );
+}
+
+const PRIVACY_KEY = "investa-privacidade";
+
+/** Modo privacidade: esconde os valores (útil em público). Fica salvo neste aparelho. */
+export function applyPrivacy(on: boolean): void {
+  document.documentElement.classList.toggle("privacy", on);
+}
+
+function PrivacyButton() {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(PRIVACY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    applyPrivacy(on);
+    try {
+      localStorage.setItem(PRIVACY_KEY, on ? "1" : "0");
+    } catch {
+      // armazenamento indisponível
+    }
+  }, [on]);
+  return (
+    <button
+      onClick={() => setOn((v) => !v)}
+      className={clsx("no-drag h-9 w-9 rounded-xl flex items-center justify-center hover:bg-line/10 transition", on ? "text-primary" : "text-muted hover:text-fg")}
+      aria-label={on ? "Mostrar valores" : "Esconder valores"}
+      aria-pressed={on}
+      title={on ? "Mostrar valores" : "Esconder valores (modo privacidade)"}
+    >
+      {on ? <EyeOff size={18} /> : <Eye size={18} />}
+    </button>
   );
 }
 

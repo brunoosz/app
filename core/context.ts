@@ -219,7 +219,11 @@ function moneySection(lines: string[], data: UserDataMap, detailed: boolean): vo
   }
   const bills = (data.bills ?? []).filter((b) => b.active);
   const planned = (data.planned ?? []).filter((p) => !p.done);
-  const budget = monthBudget(month, data.invoices ?? [], ym, new Date(), pendingFor(bills, planned, ym));
+  const boxes = (data.boxes ?? []).filter((b) => b.active);
+  const budget = monthBudget(month, data.invoices ?? [], ym, new Date(), pendingFor(bills, planned, ym, boxes));
+  if (boxes.length) {
+    lines.push(`- Caixinhas: ${boxes.map((b) => `${b.name} ${brl(b.balance)}${b.target ? ` de ${brl(b.target)}` : ""} (+${brl(b.monthly)}/mês no dia ${b.day})`).join("; ")}`);
+  }
   if (planned.length) {
     lines.push(`- Gastos que vão vir: ${planned.map((p) => `${p.description} ${brl(p.amount)} em ${brDate(p.date)}${p.plan ? " (já tem plano)" : ""}`).join("; ")}`);
   }

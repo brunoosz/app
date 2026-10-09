@@ -41,12 +41,13 @@ function MoneyTodayCard() {
   const invoices = useUserData("invoices");
   const bills = useUserData("bills");
   const planned = useUserData("planned");
+  const boxes = useUserData("boxes");
   const profile = useUserData("profile");
   const navigate = useNavigate();
   const ym = currentYm();
   const budget = useMemo(
-    () => monthBudget(summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), invoices, ym, new Date(), pendingFor(bills, planned, ym)),
-    [expenses, invoices, bills, planned, ym, profile.salary, profile.extraIncome]
+    () => monthBudget(summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), invoices, ym, new Date(), pendingFor(bills, planned, ym, boxes)),
+    [expenses, invoices, bills, planned, boxes, ym, profile.salary, profile.extraIncome]
   );
   const total = accounts.reduce((s, a) => s + a.balance, 0);
   return (

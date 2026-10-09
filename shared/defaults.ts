@@ -48,5 +48,6 @@ export function defaultUserData(): UserDataMap {
     memory: [],
     planned: [],
     wealth: {},
+    boxes: [],
   };
 }

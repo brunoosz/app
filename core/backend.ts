@@ -62,6 +62,14 @@ export class Backend {
     this.ai = new AiService(this.store, platform);
     this.cloud = new CloudService(this.store);
     this.engine = new AlertEngine(this.store, (userId, n) => this.onNotification(userId, n));
+    // O motor mexeu nos dados (ex.: depósito automático das caixinhas): sobe para a nuvem e atualiza a tela.
+    this.engine.onDataChanged = (userId) => {
+      this.cloud.schedulePush(userId);
+      if (userId === this.currentUserId) {
+        const u = this.store.findUser(userId);
+        this.platform.emit("data:changed", u ? this.store.toPublic(u) : null);
+      }
+    };
     this.ai.onModelChange = (from, to, reason) => this.notifyOwners(from, to, reason);
     this.register();
   }
@@ -240,7 +248,7 @@ export class Backend {
     const profile = this.store.getData(userId, "profile");
     const ym = currentYm();
     const month = summarizeMonth(this.store.getData(userId, "expenses"), ym, profile.salary, profile.extraIncome);
-    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym, new Date(), pendingFor(this.store.getData(userId, "bills"), this.store.getData(userId, "planned"), ym));
+    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym, new Date(), pendingFor(this.store.getData(userId, "bills"), this.store.getData(userId, "planned"), ym, this.store.getData(userId, "boxes")));
     const invoicesOpen = budget.invoicesOpen;
     const accounts = this.store.getData(userId, "accounts");
     return {
@@ -374,11 +382,11 @@ export class Backend {
     this.on("data:getAll", () => this.store.getAllData(this.uid()));
     this.on("data:set", (a: { key: UserDataKey; value: UserDataMap[UserDataKey] }) => {
       if (!USER_DATA_KEYS.includes(a.key)) throw new AppError("INVALID", "Dado inválido.");
-      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts", "bills", "memory", "planned"].includes(a.key);
+      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts", "bills", "memory", "planned", "boxes"].includes(a.key);
       if (isArray !== Array.isArray(a.value) || a.value === null || typeof a.value !== "object") throw new AppError("INVALID", "Formato inválido.");
       this.store.setData(this.uid(), a.key, a.value);
       this.cloud.schedulePush(this.uid());
-      if (a.key === "alerts" || a.key === "portfolio" || a.key === "settings" || a.key === "invoices" || a.key === "bills") this.engine.runNow();
+      if (a.key === "alerts" || a.key === "portfolio" || a.key === "settings" || a.key === "invoices" || a.key === "bills" || a.key === "boxes") this.engine.runNow();
       return true;
     });
 

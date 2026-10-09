@@ -28,6 +28,9 @@ export class AlertEngine {
   private userId: string | null = null;
   private running = false;
 
+  /** Avisado quando o motor muda dados do usuário (para sincronizar e atualizar a tela). */
+  onDataChanged?: (userId: string) => void;
+
   constructor(private store: Store, private emit: (userId: string, n: AppNotification) => void) {}
 
   start(userId: string): void {
@@ -44,7 +47,17 @@ export class AlertEngine {
   }
 
   runNow(): void {
+    // As checagens locais (lembretes, faturas, contas, caixinhas) rodam na hora,
+    // mesmo se a rodada anterior ainda estiver esperando cotações.
+    if (this.userId) this.localChecks(this.userId);
     void this.tick();
+  }
+
+  private localChecks(uid: string): void {
+    this.reminders(uid, this.store.getData(uid, "alerts"));
+    this.invoices(uid);
+    this.bills(uid);
+    this.boxes(uid);
   }
 
   /** Cria uma notificação (uma vez por chave, quando houver chave). */
@@ -96,9 +109,7 @@ export class AlertEngine {
         "welcome"
       );
 
-      this.reminders(uid, alerts);
-      this.invoices(uid);
-      this.bills(uid);
+      this.localChecks(uid);
 
       const variable = portfolio.filter((h) => h.kind === "variavel" && h.symbol);
       const symbols = [
@@ -121,6 +132,39 @@ export class AlertEngine {
   }
 
   /** Avisa uma vez por mês quando as faturas em aberto passam da renda. */
+  /** Caixinhas: no dia marcado, guarda o valor do mês (uma vez por mês). */
+  private boxes(userId: string): void {
+    const today = todayIsoSaoPaulo();
+    const ym = today.slice(0, 7);
+    const day = Number(today.slice(8, 10));
+    const list = this.store.getData(userId, "boxes");
+    let changed = false;
+    const next = list.map((b) => {
+      if (!b.active || b.lastDeposit === ym || day < Math.min(b.day, 28) || b.monthly <= 0) return b;
+      if (b.target && b.balance >= b.target) return b;
+      const amount = b.target ? Math.min(b.monthly, Math.round((b.target - b.balance) * 100) / 100) : b.monthly;
+      changed = true;
+      const balance = Math.round((b.balance + amount) * 100) / 100;
+      const reached = b.target > 0 && balance >= b.target;
+      this.push(
+        userId,
+        {
+          type: "carteira",
+          tone: "positive",
+          title: reached ? `Caixinha ${b.name} completa!` : `${brl(amount)} na caixinha ${b.name}`,
+          message: reached ? `Você chegou a ${brl(balance)}. Meta batida.` : `Agora ela tem ${brl(balance)}${b.target ? ` de ${brl(b.target)}` : ""}. Lembre de transferir no seu banco.`,
+          link: "/objetivos",
+        },
+        `caixinha-${b.id}-${ym}`
+      );
+      return { ...b, balance, lastDeposit: ym, history: [...b.history, { date: today, amount, note: "Depósito automático" }].slice(-120) };
+    });
+    if (changed) {
+      this.store.setData(userId, "boxes", next);
+      this.onDataChanged?.(userId);
+    }
+  }
+
   /** Contas fixas: aviso 3 dias antes, no dia e quando atrasa. */
   private bills(userId: string): void {
     const today = todayIsoSaoPaulo();

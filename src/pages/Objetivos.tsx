@@ -12,6 +12,7 @@ import { useUi } from "@/store/ui";
 import { useIndicators } from "@/hooks/useMarketData";
 import { Badge, Card, EmptyState, PageHeader, ProgressBar, SectionTitle } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/Button";
+import { BoxesCard } from "@/components/Boxes";
 import { Field, Input, MoneyInput, NumberInput, Select } from "@/components/ui/form";
 import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { Chart, type SeriesSpec } from "@/components/charts/Chart";
@@ -342,6 +343,8 @@ export function Objetivos() {
           </Button>
         }
       />
+
+      <BoxesCard />
 
       {goals.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">

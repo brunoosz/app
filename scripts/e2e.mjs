@@ -187,6 +187,22 @@ await wait(2000);
 await shot("bancos-credito");
 await go("alertas", "alertas", 3000);
 await go("usuarios", "usuarios", 1500);
+// Caixinha com depósito automático (dia 1: o motor guarda o valor do mês na hora).
+await go("objetivos", "objetivos-caixinha", 1200);
+{
+  const dialog = win.getByRole("dialog");
+  await win.getByRole("button", { name: "Nova caixinha", exact: true }).click();
+  await wait(400);
+  await dialog.getByPlaceholder("Ex.: Viagem, Videogame novo, Reserva").fill("Viagem");
+  await dialog.locator('input[inputmode="decimal"]').first().fill("100");
+  await dialog.locator('input[inputmode="numeric"]').first().fill("1");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await wait(3500);
+  const text = await win.locator("main").innerText();
+  const boxOk = /R\$\s?100,00 guardados/.test(text);
+  console.log(`[caixinha] depósito automático: ${boxOk ? "sim" : "NÃO"}`);
+  if (!boxOk) pageErrors.push("Caixinha não guardou o valor do mês");
+}
 await go("plano", "plano", 2000);
 await go("configuracoes", "configuracoes", 1500);
 // Memória do Assistente: adicionar um item à mão.

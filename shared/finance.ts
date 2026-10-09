@@ -1,4 +1,4 @@
-import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, Bill, PlannedExpense, PlanStep, RateType } from "./types";
+import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, Bill, PlannedExpense, PlanStep, RateType, SavingBox } from "./types";
 
 export interface Rates {
   cdi: number;
@@ -296,9 +296,14 @@ export function plannedPending(planned: PlannedExpense[], ym: string): number {
   return round2(planned.filter((p) => !p.done && p.date.startsWith(ym)).reduce((s, p) => s + p.amount, 0));
 }
 
-/** Contas fixas não pagas + gastos planejados do mês: já comprometidos. */
-export function pendingFor(bills: Bill[], planned: PlannedExpense[], ym: string): number {
-  return round2(billsPending(bills, ym) + plannedPending(planned, ym));
+/** Quanto as caixinhas ativas guardam por mês (sai do disponível). */
+export function boxesMonthly(boxes: SavingBox[]): number {
+  return round2(boxes.filter((b) => b.active && (!b.target || b.balance < b.target)).reduce((s, b) => s + b.monthly, 0));
+}
+
+/** Contas fixas não pagas + gastos planejados do mês + caixinhas: já comprometidos. */
+export function pendingFor(bills: Bill[], planned: PlannedExpense[], ym: string, boxes: SavingBox[] = []): number {
+  return round2(billsPending(bills, ym) + plannedPending(planned, ym) + boxesMonthly(boxes));
 }
 
 /** Meses inteiros até uma data (mínimo 1), para dividir quanto guardar por mês. */

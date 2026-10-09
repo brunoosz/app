@@ -267,6 +267,24 @@ export interface UserDataMap {
   memory: MemoryItem[];
   planned: PlannedExpense[];
   wealth: WealthState;
+  boxes: SavingBox[];
+}
+
+/** Caixinha: guarda um valor todo mês num dia fixo, até a meta. */
+export interface SavingBox {
+  id: string;
+  name: string;
+  /** Meta (0 = sem meta). */
+  target: number;
+  monthly: number;
+  /** Dia do mês em que o valor é guardado. */
+  day: number;
+  balance: number;
+  /** Último mês (AAAA-MM) em que o depósito automático foi feito. */
+  lastDeposit?: string;
+  history: { date: string; amount: number; note?: string }[];
+  active: boolean;
+  createdAt: string;
 }
 
 export type WealthStyle = "seguro" | "equilibrado" | "crescimento";
@@ -363,6 +381,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "memory",
   "planned",
   "wealth",
+  "boxes",
 ];
 
 export interface Quote {

@@ -224,7 +224,8 @@ export function Gastos() {
   const invoices = useUserData("invoices");
   const bills = useUserData("bills");
   const plannedList = useUserData("planned");
-  const budget = useMemo(() => monthBudget(summary, invoices, ym, new Date(), pendingFor(bills, plannedList, ym)), [summary, invoices, bills, plannedList, ym]);
+  const boxes = useUserData("boxes");
+  const budget = useMemo(() => monthBudget(summary, invoices, ym, new Date(), pendingFor(bills, plannedList, ym, boxes)), [summary, invoices, bills, plannedList, boxes, ym]);
   const donut = summary.byCategory.map((c) => ({ label: c.category, value: c.total, color: catColor(c.category) }));
 
   const grouped = useMemo(() => {
@@ -320,7 +321,7 @@ export function Gastos() {
           <div className="text-[12px] text-muted mt-1">
             {pct(budget.ratio * 100, 0, false)} da renda · gastos {brl(budget.spentDirect)}
             {budget.invoices > 0 ? ` + faturas ${brl(budget.invoices)}` : ""}
-            {budget.pendingBills > 0 ? ` + contas e planejados ${brl(budget.pendingBills)}` : ""}
+            {budget.pendingBills > 0 ? ` + contas, planejados e caixinhas ${brl(budget.pendingBills)}` : ""}
           </div>
         </Card>
         <Card>
