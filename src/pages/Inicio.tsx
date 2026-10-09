@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpRight, Flame, Gamepad2, GraduationCap, Plus, Target, Wallet } from "lucide-react";
+import { ArrowUpRight, Flame, GraduationCap, Plus, Target, Wallet } from "lucide-react";
 import type { ChartRange } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
-import { projectGoal, ratesFromIndicators } from "@shared/finance";
+import { currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth } from "@shared/finance";
+import { institutionLabel } from "@shared/banks";
+import clsx from "clsx";
 import { levelFor, nextLesson, TOTAL_LESSONS } from "@shared/learning";
 import { api } from "@/lib/api";
 import { brl, dateBR, firstName, greeting, num, pct, quotePrice, relativeTime, toneClass } from "@/lib/format";
@@ -13,7 +15,7 @@ import { useQuotes } from "@/store/market";
 import { useSession, useUserData } from "@/store/session";
 import { useAsync } from "@/hooks/useAsync";
 import { useIndicators, useNews } from "@/hooks/useMarketData";
-import { AnimatedNumber, Card, EmptyState, ErrorState, LiveDot, ProgressBar, ProgressRing, SectionTitle, Skeleton } from "@/components/ui/primitives";
+import { AnimatedNumber, Card, ErrorState, LiveDot, ProgressBar, ProgressRing, SectionTitle, Skeleton } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/form";
 import { Chart, type HoverInfo, type SeriesSpec } from "@/components/charts/Chart";
@@ -32,15 +34,72 @@ function marketOpen(): boolean {
   return d > 0 && d < 6 && m >= 600 && m < 1075;
 }
 
+/** Sem investimentos: o dinheiro de hoje vem do saldo dos bancos e do disponível do mês. */
+function MoneyTodayCard() {
+  const accounts = useUserData("accounts");
+  const expenses = useUserData("expenses");
+  const invoices = useUserData("invoices");
+  const profile = useUserData("profile");
+  const navigate = useNavigate();
+  const ym = currentYm();
+  const budget = useMemo(
+    () => monthBudget(summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), invoices, ym),
+    [expenses, invoices, ym, profile.salary, profile.extraIncome]
+  );
+  const total = accounts.reduce((s, a) => s + a.balance, 0);
+  return (
+    <Card className="lg:col-span-2">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[13px] text-muted font-medium">Seu dinheiro hoje</div>
+          <div className="text-[34px] font-bold tracking-tight mt-0.5 tabular">{accounts.length ? brl(total) : "—"}</div>
+          <div className="text-[13.5px] text-muted mt-0.5">
+            {accounts.length ? `em ${accounts.length} ${accounts.length === 1 ? "conta" : "contas"} · ainda sem investimentos` : "Informe o saldo dos seus bancos para acompanhar aqui."}
+          </div>
+        </div>
+        <div className="rounded-2xl bg-line/[0.05] px-4 py-3 min-w-[180px]">
+          <div className="text-[12.5px] text-muted">Disponível para gastar no mês</div>
+          <div className={clsx("text-[20px] font-bold tabular", budget.available >= 0 ? "text-success" : "text-danger")}>{brl(budget.available)}</div>
+          {budget.perDay !== undefined && budget.available > 0 && <div className="text-[12px] text-muted">{brl(budget.perDay)} por dia</div>}
+        </div>
+      </div>
+      {accounts.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {accounts.map((a) => (
+            <span key={a.id} className="rounded-full bg-line/[0.06] px-3 py-1 text-[13px]">
+              {institutionLabel(a.institution)} <span className="tabular font-medium">{brl(a.balance)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/[0.06] p-4">
+        <div className="font-semibold">Comece a investir, nem que seja com R$ 1</div>
+        <div className="text-[13.5px] text-muted mt-0.5">O gráfico do patrimônio começa no primeiro investimento. As aulas explicam do zero por onde começar.</div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Button size="sm" icon={Plus} onClick={() => navigate("/carteira?novo=1")}>
+            Adicionar investimento
+          </Button>
+          <Button size="sm" variant="secondary" icon={Wallet} onClick={() => navigate("/carteira")}>
+            {accounts.length ? "Atualizar saldos" : "Informar saldo dos bancos"}
+          </Button>
+          <Button size="sm" variant="secondary" icon={GraduationCap} onClick={() => navigate("/aulas")}>
+            Ir para as aulas
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function PatrimonyCard() {
   const portfolio = useUserData("portfolio");
+  const accountsTotal = useUserData("accounts").reduce((s, a) => s + a.balance, 0);
   const { data: ind } = useIndicators();
   const symbols = useMemo(() => [...portfolio.filter((h) => h.symbol).map((h) => h.symbol!), "USDBRL=X", "EURBRL=X"], [portfolio]);
   const quotes = useQuotes(symbols);
   const summary = useMemo(() => summarize(portfolio, quotes, ind), [portfolio, quotes, ind]);
   const [range, setRange] = useState<ChartRange>("6M");
   const [hover, setHover] = useState<HoverInfo | null>(null);
-  const navigate = useNavigate();
   const histKey = portfolio.length ? `phist:${range}:${portfolio.map((h) => `${h.id}${h.quantity}${h.amount}${h.avgPrice}`).join(",")}` : null;
   const hist = useAsync(histKey, () => api.portfolioHistory(range, portfolio), { staleMs: 5 * 60_000 });
 
@@ -53,27 +112,7 @@ function PatrimonyCard() {
   }, [hist.data]);
   const fmt = useCallback((v: number) => brl(v), []);
 
-  if (!portfolio.length) {
-    return (
-      <Card className="lg:col-span-2 overflow-hidden">
-        <EmptyState
-          icon={Wallet}
-          title="Seu patrimônio aparece aqui"
-          description="Cadastre seus investimentos (ações, FIIs, CDBs, Tesouro…) para ver gráficos atualizados com cotações reais."
-          action={
-            <div className="flex flex-wrap gap-2 justify-center">
-              <Button icon={Plus} onClick={() => navigate("/carteira?novo=1")}>
-                Adicionar investimento
-              </Button>
-              <Button variant="secondary" icon={Gamepad2} onClick={() => navigate("/simulador")}>
-                Treinar no simulador
-              </Button>
-            </div>
-          }
-        />
-      </Card>
-    );
-  }
+  if (!portfolio.length) return <MoneyTodayCard />;
 
   const shown = hover?.values.value ?? summary.value;
   const shownInvested = hover?.values.invested ?? summary.invested;
@@ -99,6 +138,11 @@ function PatrimonyCard() {
               {brl(diff)} {hover ? "sobre o investido" : `(${pct(summary.gainPct)}) no total`}
             </span>
           </div>
+          {!hover && accountsTotal !== 0 && (
+            <div className="text-[13px] text-muted mt-1">
+              + {brl(accountsTotal)} nos bancos · total <span className="text-fg font-semibold tabular">{brl(summary.value + accountsTotal)}</span>
+            </div>
+          )}
         </div>
         <SegmentedControl<ChartRange>
           size="sm"

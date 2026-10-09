@@ -89,6 +89,7 @@ await win.click("text=Entrar no Investa");
 await wait(2500);
 
 // Carteira: uma ação e um CDB
+await go("", "inicio-sem-investimentos", 2500);
 await go("carteira", "carteira-vazia", 1500);
 await win.click("text=Adicionar o primeiro");
 await wait(500);
