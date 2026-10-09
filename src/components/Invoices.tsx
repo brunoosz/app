@@ -158,7 +158,8 @@ export function InvoicesCard({ ym, summary }: { ym: string; summary: MonthSummar
         subtitle={list.length ? `${brl(total)} em ${list.length} ${list.length === 1 ? "cartão" : "cartões"} · ${brl(open)} em aberto` : "Informe quanto veio a fatura de cada cartão neste mês."}
         action={
           <Button size="sm" variant="secondary" icon={Plus} onClick={() => setSheet({ open: true, item: null })}>
-            Adicionar fatura
+            <span className="sm:hidden">Adicionar</span>
+            <span className="hidden sm:inline">Adicionar fatura</span>
           </Button>
         }
       />

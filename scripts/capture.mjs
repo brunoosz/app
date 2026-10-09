@@ -307,6 +307,42 @@ async function framed(app, png, dest, theme, { outWidth, pad = [2, 2, 2, 2], sha
   log(`${path.basename(dest)}: ${(fs.statSync(dest).size / 1e6).toFixed(2)} MB`);
 }
 
+/** Três celulares lado a lado, com moldura e fundo transparente. */
+async function phones(app, pngs, dest) {
+  const w = 390;
+  const h = 844;
+  const gap = 56;
+  const pad = 48;
+  const W = pad * 2 + pngs.length * (w + 20) + (pngs.length - 1) * gap;
+  const H = pad * 2 + h + 20;
+  const zoom = 1600 / W;
+  const items = pngs
+    .map(
+      (p, i) => `<div style="width:${w}px;height:${h}px;border:10px solid #05070d;border-radius:54px;overflow:hidden;box-shadow:0 0 0 1px rgba(148,163,184,.25),0 30px 60px -18px rgba(2,6,23,.55);transform:translateY(${i === 1 ? -16 : 12}px)"><img src="${pathToFileURL(p).href}" style="display:block;width:${w}px;height:${h}px"></div>`
+    )
+    .join("");
+  const html = path.join(tmp, "celulares.html");
+  fs.writeFileSync(
+    html,
+    `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent;overflow:hidden}body{zoom:${zoom}}</style></head><body><div style="padding:${pad}px;display:flex;gap:${gap}px;align-items:center">${items}</div></body></html>`
+  );
+  const b64 = await app.evaluate(
+    async ({ BrowserWindow }, { url, W, H }) => {
+      const win = new BrowserWindow({ show: false, width: W, height: H, useContentSize: true, transparent: true, frame: false, backgroundColor: "#00000000", webPreferences: { offscreen: true } });
+      await win.loadURL(url);
+      await win.webContents.executeJavaScript("Promise.all([...document.images].map((i) => i.decode()))");
+      await new Promise((r) => setTimeout(r, 250));
+      const img = await win.webContents.capturePage();
+      win.destroy();
+      return img.toPNG().toString("base64");
+    },
+    { url: pathToFileURL(html).href, W: Math.round(W * zoom), H: Math.round(H * zoom) }
+  );
+  fs.writeFileSync(dest, Buffer.from(b64, "base64"));
+  if (has("pngquant")) spawnSync("pngquant", ["--force", "--skip-if-larger", "--quality=88-100", "--speed=1", "--output", dest, dest]);
+  log(`${path.basename(dest)}: ${(fs.statSync(dest).size / 1e6).toFixed(2)} MB`);
+}
+
 // ---------------------------------------------------------------------------
 // Conta de demonstração
 
@@ -469,7 +505,13 @@ function buildDemo(shared, quotes) {
     history: positions.map((p, i) => ({ id: `demo-t${i}`, side: "compra", symbol: p.symbol, quantity: p.quantity, price: p.avgPrice, date: iso(daysAgo(40 - i * 7), 11) })),
   };
 
-  return { profile, settings, portfolio, goals, expenses, alerts, learning, simulator, chat: [] };
+  const invoices = [
+    { id: "demo-fat1", institution: "nubank", ym: cur, amount: 1874.3, dueDay: 10, minimumPayment: 281.15, paid: false },
+    { id: "demo-fat2", institution: "inter", ym: cur, amount: 642.8, dueDay: 15, paid: false },
+    { id: "demo-fat3", institution: "itau", ym: cur, amount: 389.9, dueDay: 5, paid: true },
+  ];
+
+  return { profile, settings, portfolio, goals, expenses, alerts, learning, simulator, chat: [], invoices };
 }
 
 async function setData(win, data) {
@@ -551,6 +593,14 @@ await still("gastos", "gastos", { wait: 2000 });
 await still("bancos", "bancos", { wait: 2000 });
 await still("alertas", "alertas", { wait: 1500 });
 await still("simulador", "simulador", { wait: 2000 });
+await still("vale-a-pena", "vale-a-pena", {
+  before: async () => {
+    await win.getByPlaceholder(/Link da Steam/).fill("https://store.steampowered.com/app/1091500/");
+    await win.getByRole("button", { name: "Verificar" }).click();
+    await win.getByText("Seu mês", { exact: true }).waitFor({ timeout: 30_000 });
+  },
+  wait: 2500,
+});
 
 // Tema claro para a capa
 await setData(win, { settings: { ...demo.settings, theme: "light" } });
@@ -573,15 +623,46 @@ await setData(win, { settings: { ...demo.settings, theme: "dark", smartAlerts: f
 await win.evaluate(() => localStorage.setItem("investa-theme", "dark"));
 await app.close();
 
-// 2. GIFs em 1x
+// 2. Celular: a mesma interface numa tela de 390 x 844
+const PHONE = { width: 390, height: 844, scale: 2 };
+const phoneShots = [];
+({ app, win } = await launch(PHONE));
+await attempt("celular", async () => {
+  await win.locator("nav").last().waitFor({ state: "visible", timeout: 40_000 });
+  await sleep(1500);
+  await cleanUi(win);
+  // A Carteira primeiro, para as cotações já estarem carregadas quando a Início abrir.
+  for (const [name, route] of [["celular-carteira", "carteira"], ["celular-inicio", ""], ["celular-gastos", "gastos"]]) {
+    await go(win, route);
+    await sleep(500);
+    await settle(win, { extra: 1500 });
+    await steady(win);
+    await cleanUi(win);
+    if (name === "celular-gastos") {
+      await win.evaluate(() => {
+        const title = [...document.querySelectorAll("main *")].find((el) => el.textContent === "Faturas dos cartões");
+        title?.closest(".surface")?.scrollIntoView({ block: "start" });
+        document.querySelector("main")?.scrollBy(0, -12);
+      });
+    }
+    await sleep(500);
+    phoneShots.push(await shot(win, name));
+    log(`print ${name}`);
+  }
+});
+await app.close();
+
+// 3. GIFs em 1x
 ({ app, win } = await launch(MOTION));
+// Ordem na imagem: Início, Gastos e Carteira.
+if (phoneShots.length === 3) await attempt("celular.png", () => phones(app, [phoneShots[1], phoneShots[2], phoneShots[0]], path.join(OUT, "celular.png")));
 
 // Capa e galeria. A montagem fica nesta etapa porque, em 2x, a janela fora da
 // tela é limitada ao tamanho da tela virtual e cortaria a imagem.
 const COVER = { outWidth: 2000, pad: [36, 56, 76, 56], shadow: true, radius: 10 };
 if (stills.inicio) await framed(app, stills.inicio, path.join(OUT, "capa-escuro.png"), "dark", COVER);
 if (stills["inicio-claro"]) await framed(app, stills["inicio-claro"], path.join(OUT, "capa-claro.png"), "light", COVER);
-for (const name of ["carteira", "mercado", "ativo", "aulas", "objetivos", "objetivo-projecao", "gastos", "bancos", "alertas", "simulador", "mercado-claro"]) {
+for (const name of ["carteira", "mercado", "ativo", "aulas", "objetivos", "objetivo-projecao", "gastos", "bancos", "alertas", "simulador", "vale-a-pena", "mercado-claro"]) {
   if (stills[name]) await framed(app, stills[name], path.join(OUT, `${name}.png`), name.endsWith("-claro") ? "light" : "dark", { outWidth: 1600 });
 }
 
