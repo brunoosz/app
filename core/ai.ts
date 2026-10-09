@@ -3,10 +3,17 @@ import type { Store } from "./store";
 import type { Platform } from "./platform";
 import { AppError } from "./auth";
 import { fetchStream, fetchWithTimeout } from "./http";
-import { describeModels, FALLBACK_MODEL, modelLabel, pickBest } from "./models";
+import { describeModels, FALLBACK_MODEL, FALLBACK_MODELS, modelLabel, pickBest } from "./models";
 
 export const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const CATALOG_TTL = 24 * 3600_000;
+/** Quanto tempo um modelo que falhou fica fora da escolha automática. */
+const COOLDOWN_MS = 30 * 60_000;
+/** Tempo máximo esperando o primeiro sinal de vida do modelo, e entre um trecho e outro. */
+const FIRST_BYTE_MS = 40_000;
+const IDLE_MS = 60_000;
+/** Quantos modelos tentar antes de desistir. */
+const MAX_MODELS = 4;
 
 interface ResolvedConfig {
   key: string | null;
@@ -93,7 +100,7 @@ export class AiService {
     const ids = stored.catalog?.ids;
     let model: string;
     if (choice !== "auto" && !retired.includes(choice) && (!ids || ids.includes(choice))) model = choice;
-    else model = (ids && pickBest(ids, retired)) || FALLBACK_MODEL;
+    else model = (ids && (pickBest(ids, [...retired, ...this.cooling()]) || pickBest(ids, retired))) || FALLBACK_MODEL;
 
     let key: string | null = null;
     let source: AiConfigInfo["source"] = null;
@@ -177,8 +184,8 @@ export class AiService {
 
   async test(): Promise<string> {
     let text = "";
-    await this.stream([{ role: "user", content: "Responda apenas: Conexão OK" }], (d) => (text += d), undefined, 30);
-    return `${text.trim() || "Conexão OK"} (${modelLabel(this.resolve().model)})`;
+    await this.stream([{ role: "user", content: "Responda apenas: Conexão OK" }], (d) => (text += d), undefined, 400);
+    return `${text.trim().slice(0, 80) || "Conexão OK"} (${modelLabel(this.stored.lastUsed ?? this.resolve().model)})`;
   }
 
   /** Resposta completa, sem streaming (relatórios). */
@@ -188,71 +195,148 @@ export class AiService {
     return text.trim();
   }
 
-  async stream(messages: ChatMessageIn[], onDelta: (text: string) => void, signal?: AbortSignal, maxTokens = 2048, attempt = 0): Promise<void> {
+  /** Modelos em pausa por terem falhado há pouco. */
+  private cooling(): string[] {
+    const now = Date.now();
+    return Object.entries(this.stored.cooldown ?? {})
+      .filter(([, until]) => until > now)
+      .map(([id]) => id);
+  }
+
+  private coolDown(model: string): void {
+    const now = Date.now();
+    const cooldown = Object.fromEntries(Object.entries(this.stored.cooldown ?? {}).filter(([, until]) => until > now));
+    cooldown[model] = now + COOLDOWN_MS;
+    this.patch({ cooldown });
+  }
+
+  /** Ordem de tentativa: o modelo escolhido (ou o melhor) e depois os próximos do ranking. */
+  private candidates(first: string): string[] {
+    const skip = new Set([...(this.stored.retired ?? []), ...this.cooling()]);
+    const ids = this.stored.catalog?.ids;
+    const ranked = ids?.length ? describeModels(ids).map((m) => m.id) : FALLBACK_MODELS;
+    return [...new Set([first, ...ranked.filter((id) => !skip.has(id))])].slice(0, MAX_MODELS);
+  }
+
+  /**
+   * Envia a conversa e entrega a resposta em pedaços. Se o modelo estiver fora
+   * do ar, demorar demais ou responder vazio, tenta o próximo melhor da lista
+   * sem o usuário perceber.
+   */
+  async stream(messages: ChatMessageIn[], onDelta: (text: string) => void, signal?: AbortSignal, maxTokens = 2048): Promise<void> {
     const r = this.resolve();
     if (!r.key) throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. O Dono do app precisa colocar a chave da NVIDIA em Configurações → Inteligência Artificial.");
-    let res: Response;
-    try {
-      res = await fetchStream(`${r.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${r.key}`, "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ model: r.model, messages, temperature: 0.4, top_p: 0.9, max_tokens: maxTokens, stream: true }),
-        signal,
-      });
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      throw new AppError("AI_OFFLINE", "Sem conexão com o serviço de IA. Verifique sua internet.");
-    }
-    // Modelo aposentado ou removido: marca, atualiza o catálogo e tenta o próximo melhor.
-    if ((res.status === 404 || res.status === 410) && attempt < 3) {
-      const retired = [...new Set([...(this.stored.retired ?? []), r.model])];
-      this.patch({ retired, ...(r.choice !== "auto" && r.choice === r.model ? { model: "auto" } : {}) });
-      await this.catalog(true).catch(() => undefined);
-      const next = this.resolve().model;
-      if (next !== r.model) {
-        this.onModelChange?.(r.model, next, "o modelo anterior foi descontinuado pela NVIDIA");
-        return this.stream(messages, onDelta, signal, maxTokens, attempt + 1);
+    if (!this.stored.catalog) await this.catalog().catch(() => undefined);
+    const tried: string[] = [];
+    let lastError: AppError | undefined;
+    for (const model of this.candidates(this.resolve().model)) {
+      if (signal?.aborted) return;
+      tried.push(model);
+      let emitted = false;
+      try {
+        await this.streamOnce(r, model, messages, (d) => {
+          emitted = true;
+          onDelta(d);
+        }, signal, maxTokens);
+        if (!emitted) throw new AppError("AI_EMPTY", "O modelo de IA não devolveu nenhuma resposta.");
+        if (this.stored.lastUsed !== model) this.patch({ lastUsed: model });
+        if (tried.length > 1 && r.choice !== "auto") this.onModelChange?.(tried[0], model, "o modelo escolhido não respondeu");
+        return;
+      } catch (err) {
+        if (signal?.aborted || (err as Error).name === "AbortError") return;
+        const e = err instanceof AppError ? err : new AppError("AI_OFFLINE", "Sem conexão com o serviço de IA. Verifique sua internet.");
+        // Já começou a responder, chave inválida, limite da conta ou sem internet: não adianta trocar de modelo.
+        if (emitted || ["AI_AUTH", "AI_RATE", "AI_OFFLINE"].includes(e.code)) throw e;
+        if (e.code === "AI_MODEL") {
+          this.patch({ retired: [...new Set([...(this.stored.retired ?? []), model])], ...(r.choice === model ? { model: "auto" } : {}) });
+          if (r.choice === model) this.onModelChange?.(model, this.resolve().model, "o modelo escolhido foi descontinuado pela NVIDIA");
+        } else {
+          this.coolDown(model);
+        }
+        lastError = e;
       }
     }
-    if (!res.ok || !res.body) throw friendlyError(res.status, await res.text().catch(() => ""));
-    if (this.stored.lastUsed !== r.model) this.patch({ lastUsed: r.model });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    const filter = new ThinkFilter();
-    let buffer = "";
+    throw lastError ?? new AppError("AI_DOWN", "O serviço de IA está instável agora. Tente novamente em instantes.");
+  }
+
+  private async streamOnce(r: ResolvedConfig, model: string, messages: ChatMessageIn[], onDelta: (text: string) => void, signal: AbortSignal | undefined, maxTokens: number): Promise<void> {
+    const ctrl = new AbortController();
+    let timedOut = false;
+    let timer = setTimeout(() => ((timedOut = true), ctrl.abort()), FIRST_BYTE_MS);
+    const alive = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => ((timedOut = true), ctrl.abort()), IDLE_MS);
+    };
+    const onAbort = () => ctrl.abort();
+    signal?.addEventListener("abort", onAbort);
+    const fail = (err: unknown): never => {
+      if (timedOut) throw new AppError("AI_SLOW", "O modelo de IA demorou demais para responder.");
+      if (signal?.aborted) throw err;
+      if (err instanceof AppError) throw err;
+      throw new AppError("AI_OFFLINE", "Sem conexão com o serviço de IA. Verifique sua internet.");
+    };
     try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 1);
-          if (!line.startsWith("data:")) continue;
-          const payload = line.slice(5).trim();
-          if (payload === "[DONE]") {
-            const rest = filter.flush();
-            if (rest) onDelta(rest);
-            return;
-          }
-          try {
-            const json = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) {
-              const out = filter.push(delta);
-              if (out) onDelta(out);
+      let res: Response;
+      try {
+        res = await fetchStream(`${r.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${r.key}`, "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify({ model, messages, temperature: 0.4, top_p: 0.9, max_tokens: maxTokens, stream: true }),
+          signal: ctrl.signal,
+        });
+      } catch (err) {
+        return fail(err);
+      }
+      if (!res.ok || !res.body) {
+        const body = await res.text().catch(() => "");
+        // 400/422: o modelo não aceita algo do pedido; trata como fora do ar e tenta outro.
+        if (res.status === 400 || res.status === 422) throw new AppError("AI_DOWN", `Erro da IA (${res.status}): ${body.slice(0, 200)}`);
+        throw friendlyError(res.status, body);
+      }
+      alive();
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      const filter = new ThinkFilter();
+      let buffer = "";
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          alive();
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 1);
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (payload === "[DONE]") {
+              const rest = filter.flush();
+              if (rest) onDelta(rest);
+              return;
             }
-          } catch {
-            // linha parcial ou keep-alive
+            try {
+              const json = JSON.parse(payload) as { choices?: { delta?: { content?: string | null } }[]; error?: { message?: string } };
+              if (json.error) throw new AppError("AI_DOWN", `Erro da IA: ${json.error.message ?? "falha no modelo"}`);
+              const delta = json.choices?.[0]?.delta?.content;
+              if (delta) {
+                const out = filter.push(delta);
+                if (out) onDelta(out);
+              }
+            } catch (err) {
+              if (err instanceof AppError) throw err;
+              // linha parcial ou keep-alive
+            }
           }
         }
+      } catch (err) {
+        return fail(err);
       }
-    } catch (err) {
-      if ((err as Error).name === "AbortError") return;
-      throw err;
+      const rest = filter.flush();
+      if (rest) onDelta(rest);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
     }
-    const rest = filter.flush();
-    if (rest) onDelta(rest);
   }
 }

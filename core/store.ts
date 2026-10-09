@@ -37,6 +37,8 @@ export interface AiStoredConfig {
   retired?: string[];
   /** Último modelo usado de fato, para avisar o Dono quando ele mudar. */
   lastUsed?: string;
+  /** Modelos que falharam há pouco (erro 5xx, sem resposta): ficam de fora até o horário indicado. */
+  cooldown?: Record<string, number>;
 }
 
 interface DBShape {
