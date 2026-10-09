@@ -1,7 +1,7 @@
 import type { AppNotification, Holding, PriceAlert, Quote, UserSettings } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
 import { DAILY_TIPS } from "@shared/tips";
-import { billDueDate, ymLabel } from "@shared/finance";
+import { billDueDate, currentYm, monthBudget, pendingFor, summarizeMonth, weekSummary, ymLabel } from "@shared/finance";
 import type { Store } from "./store";
 import { getQuotes } from "./yahoo";
 import { getCopom, getIndicators } from "./bcb";
@@ -125,6 +125,7 @@ export class AlertEngine {
       if (settings.smartAlerts) this.smart(uid, variable, quotes, settings);
       if (settings.marketEvents) await this.marketEvents(uid, quotes);
       if (settings.dailyTip) this.tip(uid);
+      if (settings.weeklySummary !== false) this.weekly(uid);
       this.prune(uid);
     } finally {
       this.running = false;
@@ -132,6 +133,32 @@ export class AlertEngine {
   }
 
   /** Avisa uma vez por mês quando as faturas em aberto passam da renda. */
+  /** Domingo: resumo da semana (uma vez por domingo). */
+  private weekly(userId: string): void {
+    const now = nowInSaoPaulo();
+    if (now.getDay() !== 0 || now.getHours() < 9) return;
+    const today = todayIsoSaoPaulo();
+    const expenses = this.store.getData(userId, "expenses");
+    const bills = this.store.getData(userId, "bills");
+    const profile = this.store.getData(userId, "profile");
+    const w = weekSummary(expenses, bills, today);
+    const ym = currentYm();
+    const budget = monthBudget(
+      summarizeMonth(expenses, ym, profile.salary, profile.extraIncome),
+      this.store.getData(userId, "invoices"),
+      ym,
+      now,
+      pendingFor(bills, this.store.getData(userId, "planned"), ym, this.store.getData(userId, "boxes"))
+    );
+    const diff = w.previous ? Math.round(((w.spent - w.previous) / w.previous) * 100) : 0;
+    const parts = [
+      `Você gastou ${brl(w.spent)} nesta semana${w.previous ? ` (${diff >= 0 ? "+" : ""}${diff}% em relação à anterior)` : ""}${w.topCategory ? `, mais em ${w.topCategory.category}` : ""}.`,
+      `Disponível no mês: ${brl(budget.available)}${budget.perDay !== undefined && budget.available > 0 ? ` (${brl(budget.perDay)} por dia)` : ""}.`,
+      w.dueSoon.length ? `Vence nesta semana: ${w.dueSoon.map((d) => `${d.name} ${brl(d.amount)}`).join(", ")}.` : "",
+    ].filter(Boolean);
+    this.push(userId, { type: "sistema", tone: budget.available < 0 ? "negative" : "info", title: "Resumo da sua semana", message: parts.join(" "), link: "/gastos" }, `semana-${today}`);
+  }
+
   /** Caixinhas: no dia marcado, guarda o valor do mês (uma vez por mês). */
   private boxes(userId: string): void {
     const today = todayIsoSaoPaulo();

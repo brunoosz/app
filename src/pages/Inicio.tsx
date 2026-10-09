@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, Flame, GraduationCap, Plus, Target, Wallet } from "lucide-react";
 import type { ChartRange } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
-import { pendingFor, currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth } from "@shared/finance";
+import { pendingFor, currentYm, monthBudget, weekSummary, projectGoal, ratesFromIndicators, summarizeMonth } from "@shared/finance";
 import { institutionLabel } from "@shared/banks";
 import clsx from "clsx";
 import { levelFor, nextLesson, TOTAL_LESSONS } from "@shared/learning";
@@ -32,6 +32,39 @@ function marketOpen(): boolean {
   const d = now.getDay();
   const m = now.getHours() * 60 + now.getMinutes();
   return d > 0 && d < 6 && m >= 600 && m < 1075;
+}
+
+/** Resumo dos últimos 7 dias: quanto saiu, comparação e o que vence. */
+function WeekCard() {
+  const expenses = useUserData("expenses");
+  const bills = useUserData("bills");
+  const today = new Date().toISOString().slice(0, 10);
+  const w = useMemo(() => weekSummary(expenses, bills, today), [expenses, bills, today]);
+  const diff = w.previous ? Math.round(((w.spent - w.previous) / w.previous) * 100) : null;
+  return (
+    <Card>
+      <SectionTitle title="Sua semana" subtitle="Últimos 7 dias" action={<Link to="/gastos" className="text-[13px] text-primary font-medium">Gastos</Link>} />
+      <div className="text-[26px] font-bold tabular">{brl(w.spent)}</div>
+      <div className="text-[13px] text-muted">
+        {diff === null ? "gastos lançados na semana" : `${diff >= 0 ? "+" : ""}${diff}% em relação à semana anterior`}
+        {w.topCategory ? ` · mais em ${w.topCategory.category}` : ""}
+      </div>
+      {w.dueSoon.length > 0 ? (
+        <div className="mt-3 space-y-1.5">
+          {w.dueSoon.slice(0, 3).map((d) => (
+            <div key={d.name + d.date} className="flex justify-between text-[13.5px]">
+              <span className="truncate">
+                {d.name} <span className="text-muted">· {dateBR(d.date, { day: "2-digit", month: "short" })}</span>
+              </span>
+              <span className="tabular font-medium shrink-0 ml-2">{brl(d.amount)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-3 text-[13px] text-muted">Nenhuma conta fixa vence nos próximos 7 dias.</div>
+      )}
+    </Card>
+  );
 }
 
 /** Sem investimentos: o dinheiro de hoje vem do saldo dos bancos e do disponível do mês. */
@@ -438,6 +471,7 @@ export function Inicio() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 mt-4">
+        <WeekCard />
         <LearningCard />
         <GoalsCard />
         <IndicatorsCard />

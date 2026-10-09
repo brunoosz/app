@@ -26,6 +26,7 @@ export function defaultUserData(): UserDataMap {
       smartAlerts: true,
       marketEvents: true,
       dailyTip: true,
+      weeklySummary: true,
       gainThreshold: 10,
       lossThreshold: 10,
       deviationThreshold: 5,

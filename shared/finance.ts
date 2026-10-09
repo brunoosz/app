@@ -367,6 +367,40 @@ export function wealthProjection(start: number, monthly: number, annualRate: num
   return { points, milestones };
 }
 
+export interface WeekSummary {
+  /** Gasto nos últimos 7 dias (até hoje). */
+  spent: number;
+  /** Gasto nos 7 dias anteriores. */
+  previous: number;
+  topCategory?: { category: string; total: number };
+  /** Contas fixas que vencem nos próximos 7 dias. */
+  dueSoon: { name: string; amount: number; date: string }[];
+}
+
+/** Resumo da semana: o que saiu nos últimos 7 dias, comparação e o que vence. */
+export function weekSummary(expenses: { type: string; amount: number; date: string; category: string; installments: number }[], bills: Bill[], today: string): WeekSummary {
+  const t = Date.parse(`${today}T12:00:00`);
+  const day = 86_400_000;
+  const inRange = (d: string, from: number, to: number) => {
+    const x = Date.parse(`${d.slice(0, 10)}T12:00:00`);
+    return x > t - to * day && x <= t - from * day;
+  };
+  const spentIn = (from: number, to: number) =>
+    expenses.filter((e) => e.type === "despesa" && inRange(e.date, from, to)).reduce((s, e) => s + e.amount / Math.max(1, e.installments), 0);
+  const cats = new Map<string, number>();
+  for (const e of expenses) if (e.type === "despesa" && inRange(e.date, 0, 7)) cats.set(e.category, (cats.get(e.category) ?? 0) + e.amount / Math.max(1, e.installments));
+  const top = [...cats.entries()].sort((a, b) => b[1] - a[1])[0];
+  const dueSoon: WeekSummary["dueSoon"] = [];
+  for (let k = 0; k <= 7; k++) {
+    const d = new Date(t + k * day).toISOString().slice(0, 10);
+    for (const b of bills) {
+      if (!b.active || b.paid.includes(d.slice(0, 7))) continue;
+      if (billDueDate(b, d.slice(0, 7)) === d) dueSoon.push({ name: b.name, amount: b.amount, date: d });
+    }
+  }
+  return { spent: round2(spentIn(0, 7)), previous: round2(spentIn(7, 14)), topCategory: top ? { category: top[0], total: round2(top[1]) } : undefined, dueSoon };
+}
+
 export function monthBudget(summary: MonthSummary, invoices: Invoice[], ym: string, today = new Date(), pendingBills = 0): MonthBudget {
   const monthInvoices = invoices.filter((i) => i.ym === ym);
   const withInvoice = new Set(monthInvoices.map((i) => i.institution));

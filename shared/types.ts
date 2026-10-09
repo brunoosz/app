@@ -47,6 +47,8 @@ export interface UserSettings {
   smartAlerts: boolean;
   marketEvents: boolean;
   dailyTip: boolean;
+  /** Resumo da semana todo domingo. */
+  weeklySummary: boolean;
   gainThreshold: number;
   lossThreshold: number;
   deviationThreshold: number;

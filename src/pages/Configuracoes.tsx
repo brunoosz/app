@@ -637,6 +637,7 @@ export function Configuracoes() {
             <ToggleRow title="Alertas inteligentes da carteira" subtitle="Lucro, prejuízo e preço fora do normal" checked={settings.smartAlerts} onChange={(v) => setSetting({ smartAlerts: v })} />
             <ToggleRow title="Eventos do mercado" subtitle="Copom, IPCA, dólar e Ibovespa" checked={settings.marketEvents} onChange={(v) => setSetting({ marketEvents: v })} />
             <ToggleRow title="Dica do dia" subtitle="Uma dica de educação financeira por dia" checked={settings.dailyTip} onChange={(v) => setSetting({ dailyTip: v })} />
+            <ToggleRow title="Resumo semanal" subtitle="Todo domingo: quanto gastou, o que vence e o disponível do mês" checked={settings.weeklySummary !== false} onChange={(v) => setSetting({ weeklySummary: v })} />
             <ToggleRow title="Continuar em segundo plano" subtitle="Ao fechar, fica na bandeja e continua avisando" checked={settings.runInBackground} onChange={(v) => setSetting({ runInBackground: v })} />
           </ListGroup>
           <button className="text-[13px] text-primary font-semibold mt-2 px-1 inline-flex items-center gap-1" onClick={() => navigate("/alertas")}>
