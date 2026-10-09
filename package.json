@@ -20,7 +20,8 @@
     "electron:build:mac": "npm run build && electron-builder --mac",
     "electron:build:linux": "npm run build && electron-builder --linux",
     "smoke:data": "node scripts/build-electron.mjs && node dist-electron/smoke.js",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "media": "npm run build && node scripts/capture.mjs"
   },
   "build": {
     "appId": "com.investa.app",
