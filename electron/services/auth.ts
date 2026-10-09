@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import type { PublicUser, Role, UserStatus } from "@shared/types";
-import { ROLE_LABEL } from "@shared/types";
 import type { Store, UserRecord } from "./store";
 
 export class AppError extends Error {
@@ -95,7 +94,8 @@ export class AuthService {
     return this.store.toPublic(user);
   }
 
-  login(username: string, password: string, role: Role): PublicUser {
+  // Um login só: o cargo vem da conta e decide o que a pessoa vê dentro do app.
+  login(username: string, password: string): PublicUser {
     const key = username.trim().toLowerCase();
     const lock = attempts.get(key);
     if (lock && lock.until > Date.now()) {
@@ -111,9 +111,6 @@ export class AuthService {
     }
     attempts.delete(key);
     if (user.status === "bloqueado") throw new AppError("BLOCKED", "Esta conta está bloqueada. Fale com o dono do aplicativo.");
-    if (user.role !== role) {
-      throw new AppError("ROLE_MISMATCH", `Esta conta é do tipo ${ROLE_LABEL[user.role]}. Selecione "${ROLE_LABEL[user.role]}" para entrar.`);
-    }
     user.lastLoginAt = new Date().toISOString();
     this.store.save();
     return this.store.toPublic(user);

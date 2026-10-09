@@ -15,7 +15,7 @@ import { getCopom, getIndicators, getIpcaHistory, getSelicHistory } from "./serv
 import { getTesouro, setTesouroCacheFile } from "./services/tesouro";
 import { setBrowserFetch } from "./services/http";
 import { getNews } from "./services/news";
-import { getBanks } from "./services/banks";
+import { getBanks, setCreditCacheFile } from "./services/banks";
 import { portfolioHistory } from "./services/portfolio";
 import { buildAiContext, SYSTEM_PROMPT } from "./services/context";
 import { buildExcel, buildReportHtml } from "./services/reports";
@@ -232,8 +232,8 @@ function registerIpc(): void {
   );
   handle(
     "auth:login",
-    (args: { username: string; password: string; role: Role; remember?: boolean }) => {
-      const user = auth.login(String(args.username ?? ""), String(args.password ?? ""), args.role);
+    (args: { username: string; password: string; remember?: boolean }) => {
+      const user = auth.login(String(args.username ?? ""), String(args.password ?? ""));
       startSession(user.id, !!args.remember);
       return user;
     },
@@ -461,6 +461,7 @@ app.whenReady().then(() => {
   store = new Store(app.getPath("userData"));
   setBrowserFetch((url, init) => net.fetch(url, init));
   setTesouroCacheFile(path.join(app.getPath("userData"), "cache-tesouro.json"));
+  setCreditCacheFile(path.join(app.getPath("userData"), "cache-credito.json"));
   auth = new AuthService(store);
   const configDirs = [app.getPath("userData"), process.env.PORTABLE_EXECUTABLE_DIR, path.dirname(process.execPath), isDev ? process.cwd() : undefined].filter(
     (d): d is string => !!d

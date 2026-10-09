@@ -34,7 +34,7 @@ import { ExpenseFields, IncomeFields, InvestFields, ProfileFields, RISK_LABEL, t
 import { ErrorBanner } from "@/pages/auth/Login";
 
 const RECOMMENDED_MODELS = [
-  { id: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B (recomendado, rápido e ótimo em português)" },
+  { id: "meta/llama-4-maverick-17b-128e-instruct", label: "Llama 4 Maverick (recomendado)" },
   { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B (raciocínio mais profundo)" },
   { id: "nvidia/llama-3.3-nemotron-super-49b-v1", label: "Nemotron Super 49B (NVIDIA)" },
   { id: "meta/llama-3.1-405b-instruct", label: "Llama 3.1 405B (muito grande, mais lento)" },

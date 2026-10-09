@@ -86,7 +86,7 @@ Só o Windows tem builds prontos. O `.dmg` e o `AppImage` podem ser gerados a pa
 2. Responda ao questionário: renda, gastos, quanto dá para investir, perfil de investidor e objetivo principal. Os dados financeiros podem ser alterados depois em Configurações.
 3. Para usar o Professor IA, crie uma chave em [build.nvidia.com](https://build.nvidia.com/settings/api-keys), cole a chave (`nvapi-...`) em Configurações → Inteligência Artificial e clique em "Testar conexão". Só Dono e Administrador veem essa seção, e a chave salva vale para todas as contas do app.
 
-No login, além de usuário e senha, é preciso escolher o cargo da conta. Se o cargo não bater, o app recusa a entrada e mostra o cargo correto. Com "Manter conectado" ligado (é o padrão), a sessão fica salva por 30 dias e o login é pulado.
+Todo mundo entra pela mesma tela, só com usuário e senha. O cargo vem da conta e define o que aparece dentro do app: a tela Usuários, por exemplo, só existe para Dono e Administrador. Com "Manter conectado" ligado (é o padrão), a sessão fica salva por 30 dias e o login é pulado.
 
 O Administrador gerencia só contas de Usuário, só o Dono muda cargos, e o app não deixa remover, rebaixar nem bloquear o último Dono.
 
@@ -136,7 +136,7 @@ Com a janela visível, a tela atualiza as cotações a cada 15 segundos. Segundo
 
 ## Configuração da IA
 
-Por padrão, o Professor IA usa `https://integrate.api.nvidia.com/v1` com o modelo `meta/llama-3.3-70b-instruct`.
+Por padrão, o Professor IA usa `https://integrate.api.nvidia.com/v1` com o modelo `meta/llama-4-maverick-17b-128e-instruct`. A NVIDIA aposenta modelos de tempos em tempos. Quando o modelo configurado deixa de existir, o app escolhe sozinho outro disponível na sua conta e passa a usá-lo.
 
 O app procura a chave nesta ordem:
 
@@ -149,7 +149,7 @@ Para usar um arquivo, copie `config.example.json` para `config.json` e preencha 
 ```json
 {
   "nvidiaApiKey": "nvapi-...",
-  "model": "meta/llama-3.3-70b-instruct"
+  "model": "meta/llama-4-maverick-17b-128e-instruct"
 }
 ```
 

@@ -1,6 +1,7 @@
 import type { BankScore, BanksData, CreditRate, CreditRatesData } from "@shared/types";
 import { BANKS, matchBankId } from "@shared/banks";
 import { netReturn } from "@shared/finance";
+import fs from "node:fs";
 import { cached, getJson } from "./http";
 import { getIndicators } from "./bcb";
 
@@ -25,10 +26,59 @@ interface TaxaRow {
   TaxaJurosAoAno: number;
 }
 
+// Última consulta boa fica em disco: a base do Banco Central é grande e em
+// conexões lentas a consulta pode falhar. Nesse caso o app mostra a anterior.
+let creditCacheFile: string | null = null;
+export function setCreditCacheFile(file: string): void {
+  creditCacheFile = file;
+}
+
+const FIELDS = "InicioPeriodo,FimPeriodo,Segmento,Modalidade,Posicao,InstituicaoFinanceira,TaxaJurosAoMes,TaxaJurosAoAno";
+
+async function fetchTaxas(): Promise<TaxaRow[]> {
+  const urls = [
+    `${TAXAS}/TaxasJurosDiariaPorInicioPeriodo?$top=6000&$orderby=InicioPeriodo%20desc&$select=${FIELDS}&$format=json`,
+    `${TAXAS}/TaxasJurosDiariaPorInicioPeriodo?$top=6000&$orderby=InicioPeriodo%20desc&$format=json`,
+  ];
+  let last: unknown;
+  for (const url of urls) {
+    try {
+      const json = await getJson<{ value: TaxaRow[] }>(url, {}, 90_000);
+      if (json.value?.length) return json.value;
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last ?? new Error("Taxas de juros do BCB indisponíveis");
+}
+
 export async function getCreditRates(): Promise<CreditRatesData> {
   return cached("bcb:credit", 12 * 3600_000, async () => {
-    const json = await getJson<{ value: TaxaRow[] }>(`${TAXAS}/TaxasJurosDiariaPorInicioPeriodo?$top=6000&$orderby=InicioPeriodo%20desc&$format=json`, {}, 40_000);
-    const all = json.value ?? [];
+    try {
+      const data = parseCredit(await fetchTaxas());
+      if (creditCacheFile) {
+        try {
+          fs.writeFileSync(creditCacheFile, JSON.stringify(data));
+        } catch {
+          // sem disco: segue só com a memória
+        }
+      }
+      return data;
+    } catch (err) {
+      if (creditCacheFile && fs.existsSync(creditCacheFile)) {
+        try {
+          return JSON.parse(fs.readFileSync(creditCacheFile, "utf8")) as CreditRatesData;
+        } catch {
+          // cache corrompido
+        }
+      }
+      throw err;
+    }
+  });
+}
+
+function parseCredit(all: TaxaRow[]): CreditRatesData {
+  {
     const period = all[0]?.InicioPeriodo;
     if (!period) throw new Error("Taxas de juros do BCB indisponíveis");
     const rows = all.filter((r) => r.InicioPeriodo === period && /f[íi]sica/i.test(r.Segmento));
@@ -48,15 +98,17 @@ export async function getCreditRates(): Promise<CreditRatesData> {
       return { key: m.key, label: m.label, rates };
     }).filter((m) => m.rates.length > 0);
     return { period, modalities, updatedAt: new Date().toISOString() };
-  });
+  }
 }
 
 export async function getBanks(): Promise<BanksData> {
-  return cached("banks", 60 * 60_000, async () => {
-    const [ind, credit] = await Promise.all([
-      getIndicators().catch(() => undefined),
-      getCreditRates().catch(() => ({ modalities: [], updatedAt: new Date().toISOString() }) as CreditRatesData),
-    ]);
+  // Sem as taxas de crédito, o ranking fica em cache só por 2 minutos, para o
+  // "Tentar de novo" da aba Juros de crédito buscar de novo.
+  const fetched = await getCreditRates().catch(() => null);
+  const key = fetched ? "banks" : "banks:sem-credito";
+  return cached(key, fetched ? 60 * 60_000 : 2 * 60_000, async () => {
+    const ind = await getIndicators().catch(() => undefined);
+    const credit = fetched ?? ({ modalities: [], updatedAt: new Date().toISOString() } as CreditRatesData);
     const cdi = ind?.cdi?.value;
     const maxBreadth = Math.max(...BANKS.map((b) => b.invest.length));
 

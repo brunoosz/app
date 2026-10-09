@@ -6,7 +6,23 @@ import { AppError } from "./auth";
 import { fetchWithTimeout } from "./http";
 
 export const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
-export const DEFAULT_MODEL = "meta/llama-3.3-70b-instruct";
+export const DEFAULT_MODEL = "meta/llama-4-maverick-17b-128e-instruct";
+
+// Modelos de conversa em ordem de preferência. A NVIDIA aposenta modelos com
+// o tempo; quando o configurado some (404/410), o app escolhe o primeiro
+// desta lista que ainda existir na conta e passa a usá-lo.
+export const PREFERRED_MODELS = [
+  "meta/llama-4-maverick-17b-128e-instruct",
+  "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+  "nvidia/llama-3.3-nemotron-super-49b-v1",
+  "qwen/qwen3-235b-a22b",
+  "deepseek-ai/deepseek-v3.1",
+  "mistralai/mistral-medium-3-instruct",
+  "openai/gpt-oss-120b",
+  "meta/llama-3.1-405b-instruct",
+  "meta/llama-4-scout-17b-16e-instruct",
+  "meta/llama-3.1-70b-instruct",
+];
 
 export interface Secrets {
   encrypt(plain: string): { data: string; mode: "safe" | "plain" };
@@ -73,7 +89,7 @@ class ThinkFilter {
 
 function friendlyError(status: number, body: string): AppError {
   if (status === 401 || status === 403) return new AppError("AI_AUTH", "Chave da API inválida ou sem permissão. Confira em Configurações → Inteligência Artificial.");
-  if (status === 404) return new AppError("AI_MODEL", "Modelo de IA não encontrado. Escolha outro modelo em Configurações → Inteligência Artificial.");
+  if (status === 404 || status === 410) return new AppError("AI_MODEL", "O modelo de IA escolhido não está mais disponível. Escolha outro em Configurações → Inteligência Artificial.");
   if (status === 429) return new AppError("AI_RATE", "Limite de uso da API atingido. Aguarde alguns instantes e tente de novo.");
   if (status >= 500) return new AppError("AI_DOWN", "O serviço de IA está instável agora. Tente novamente em instantes.");
   return new AppError("AI_ERROR", `Erro da IA (${status}): ${body.slice(0, 200)}`);
@@ -168,7 +184,24 @@ export class AiService {
     return text.trim() || "Conexão OK";
   }
 
-  async stream(messages: ChatMessageIn[], onDelta: (text: string) => void, signal?: AbortSignal, maxTokens = 2048): Promise<void> {
+  // Troca para outro modelo disponível quando o atual foi aposentado.
+  private async replaceRetiredModel(retired: string): Promise<boolean> {
+    let available: string[];
+    try {
+      available = await this.listModels();
+    } catch {
+      return false;
+    }
+    const pick =
+      PREFERRED_MODELS.find((m) => m !== retired && available.includes(m)) ??
+      available.find((m) => m !== retired && /instruct|chat/i.test(m));
+    if (!pick) return false;
+    this.store.app.ai = { ...(this.store.app.ai ?? {}), model: pick };
+    this.store.save();
+    return true;
+  }
+
+  async stream(messages: ChatMessageIn[], onDelta: (text: string) => void, signal?: AbortSignal, maxTokens = 2048, retried = false): Promise<void> {
     const r = this.resolve();
     if (!r.key) throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. O Dono do app precisa colocar a chave da NVIDIA em Configurações → Inteligência Artificial.");
     let res: Response;
@@ -182,6 +215,9 @@ export class AiService {
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
       throw new AppError("AI_OFFLINE", "Sem conexão com o serviço de IA. Verifique sua internet.");
+    }
+    if ((res.status === 404 || res.status === 410) && !retried && (await this.replaceRetiredModel(r.model))) {
+      return this.stream(messages, onDelta, signal, maxTokens, true);
     }
     if (!res.ok || !res.body) throw friendlyError(res.status, await res.text().catch(() => ""));
     const reader = res.body.getReader();
