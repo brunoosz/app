@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, Flame, GraduationCap, Plus, Target, Wallet } from "lucide-react";
 import type { ChartRange } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
-import { billsPending, currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth } from "@shared/finance";
+import { pendingFor, currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth } from "@shared/finance";
 import { institutionLabel } from "@shared/banks";
 import clsx from "clsx";
 import { levelFor, nextLesson, TOTAL_LESSONS } from "@shared/learning";
@@ -40,12 +40,13 @@ function MoneyTodayCard() {
   const expenses = useUserData("expenses");
   const invoices = useUserData("invoices");
   const bills = useUserData("bills");
+  const planned = useUserData("planned");
   const profile = useUserData("profile");
   const navigate = useNavigate();
   const ym = currentYm();
   const budget = useMemo(
-    () => monthBudget(summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), invoices, ym, new Date(), billsPending(bills, ym)),
-    [expenses, invoices, bills, ym, profile.salary, profile.extraIncome]
+    () => monthBudget(summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), invoices, ym, new Date(), pendingFor(bills, planned, ym)),
+    [expenses, invoices, bills, planned, ym, profile.salary, profile.extraIncome]
   );
   const total = accounts.reduce((s, a) => s + a.balance, 0);
   return (

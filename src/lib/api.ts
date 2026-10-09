@@ -1,4 +1,5 @@
 import type {
+  SavingPlan,
   AiCatalog,
   AiConfigInfo,
   AiMode,
@@ -129,6 +130,10 @@ export const api = {
   },
 
   exportReport: (ym: string, format: "pdf" | "xlsx", withAi = false) => call<{ path: string } | null>("reports:export", { ym, format, withAi }),
+  plans: {
+    forExpense: (id: string) => call<SavingPlan>("plans:expense", { id }),
+    exportPdf: (title: string, markdown: string, subtitle?: string) => call<{ path: string } | null>("plans:export", { title, markdown, subtitle }),
+  },
   deals: {
     check: (query: string, price?: number) => call<DealCheck>("deals:check", { query, price }),
     context: (deal: DealCheck, installments?: number) => call<string>("deals:context", { deal, installments }),

@@ -168,6 +168,18 @@ await go("gastos", "gastos", 1500);
   console.log(`[gastos-conta-fixa] paga: ${billOk ? "sim" : "NÃO"}`);
   if (!billOk) pageErrors.push("Conta fixa não ficou paga");
   await shot("gastos-conta-fixa");
+  // Gasto que vai vir.
+  await win.getByRole("button", { name: "Adicionar gasto futuro", exact: true }).click();
+  await wait(400);
+  await dialog.getByPlaceholder("Ex.: material do projeto da faculdade").fill("Projeto da faculdade");
+  await dialog.locator('input[inputmode="decimal"]').first().fill("600");
+  await dialog.locator('input[type="date"]').fill(new Date(Date.now() + 75 * 86_400_000).toISOString().slice(0, 10));
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await wait(600);
+  const plannedOk = /guardar R\$\s?[\d.,]+\/mês/.test(await win.locator("main").innerText());
+  console.log(`[gastos-planejado] quanto guardar por mês: ${plannedOk ? "sim" : "NÃO"}`);
+  if (!plannedOk) pageErrors.push("Gasto planejado não mostrou quanto guardar por mês");
+  await shot("gastos-planejado");
 }
 await go("bancos", "bancos", 8000);
 await win.getByRole("button", { name: "Juros de crédito", exact: true }).click();

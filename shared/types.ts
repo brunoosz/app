@@ -265,6 +265,35 @@ export interface UserDataMap {
   accounts: BankAccount[];
   bills: Bill[];
   memory: MemoryItem[];
+  planned: PlannedExpense[];
+}
+
+/** Passo de um plano montado pelo Assistente (vira checklist). */
+export interface PlanStep {
+  id: string;
+  text: string;
+  /** AAAA-MM-DD, quando o passo tem data. */
+  date?: string;
+  done: boolean;
+}
+
+export interface SavingPlan {
+  createdAt: string;
+  /** Plano completo em Markdown, como o Assistente escreveu. */
+  text: string;
+  steps: PlanStep[];
+}
+
+/** Gasto que ainda vai acontecer (projeto da faculdade, viagem, presente…). */
+export interface PlannedExpense {
+  id: string;
+  description: string;
+  amount: number;
+  /** AAAA-MM-DD */
+  date: string;
+  notes?: string;
+  done: boolean;
+  plan?: SavingPlan;
 }
 
 /** Conta que se repete todo mês (aluguel, internet, assinatura). */
@@ -306,6 +335,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "accounts",
   "bills",
   "memory",
+  "planned",
 ];
 
 export interface Quote {

@@ -368,3 +368,66 @@ export async function buildPdf(input: ReportInput): Promise<Uint8Array> {
   }
   return new Uint8Array(doc.output("arraybuffer"));
 }
+
+/** Documento simples (plano do Assistente) em HTML, para virar PDF no desktop. */
+export function buildDocHtml(title: string, subtitle: string, markdown: string): string {
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(title)}</title>
+<style>
+body{font-family:Inter,Segoe UI,Arial,sans-serif;color:#0B0F1A;margin:0;font-size:12.5px;line-height:1.55}
+.top{background:#0B0F1A;color:#F8FAFC;padding:26px 40px}
+.top h1{margin:0;font-size:20px}.top p{margin:6px 0 0;color:#94A3B8;font-size:11px}
+.body{padding:24px 40px}
+h2,h3{margin:18px 0 6px}ul{padding-left:20px}li{margin:3px 0}
+footer{padding:16px 40px;color:#64748B;font-size:10px;border-top:1px solid #E2E8F0}
+</style></head><body>
+<div class="top"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div>
+<div class="body">${markdownToHtml(markdown.replace(/^\s*[-*]\s*\[( |x|X)\]/gm, (_m, c) => (c.trim() ? "- ☑" : "- ☐")))}</div>
+<footer>Gerado pelo aplicativo Investa. Conteúdo educacional, não é recomendação individual de investimento.</footer>
+</body></html>`;
+}
+
+/** O mesmo documento em PDF, sem navegador (celular). */
+export async function buildDocPdf(title: string, subtitle: string, markdown: string): Promise<Uint8Array> {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 40;
+  doc.setFillColor(11, 15, 26);
+  doc.rect(0, 0, W, 80, "F");
+  doc.setTextColor(248, 250, 252);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.text(doc.splitTextToSize(title, W - 2 * M)[0] ?? title, M, 40);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(148, 163, 184);
+  doc.text(subtitle, M, 62);
+  let y = 108;
+  doc.setTextColor(11, 15, 26);
+  const lines = markdown
+    .replace(/^\s*[-*]\s*\[( |x|X)\]/gm, (_m, c) => (c.trim() ? "- [feito]" : "- [ ]"))
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("|"));
+  for (const line of lines) {
+    const heading = /^#{1,4}\s/.test(line);
+    const text = line.replace(/^#{1,4}\s*/, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^[-*•]\s+/, "•  ");
+    if (heading) y += 6;
+    doc.setFont("helvetica", heading ? "bold" : "normal");
+    doc.setFontSize(heading ? 12 : 10);
+    for (const part of doc.splitTextToSize(text || " ", W - 2 * M) as string[]) {
+      if (y > H - M) {
+        doc.addPage();
+        y = M;
+      }
+      doc.text(part, M, y);
+      y += heading ? 17 : 14;
+    }
+    if (heading) y += 2;
+  }
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text("Gerado pelo aplicativo Investa. Conteúdo educacional, não é recomendação individual de investimento.", M, H - 24);
+  return new Uint8Array(doc.output("arraybuffer"));
+}

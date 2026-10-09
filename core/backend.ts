@@ -2,7 +2,7 @@
 // o app do celular criam este backend com o adaptador da sua plataforma.
 import type { AiChatRequest, AiMode, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { USER_DATA_KEYS } from "@shared/types";
-import { billsPending, currentYm, monthBudget, summarizeMonth } from "@shared/finance";
+import { pendingFor, currentYm, monthBudget, monthsUntil, parsePlanSteps, summarizeMonth } from "@shared/finance";
 import { modeInfo } from "@shared/ai";
 import type { Platform } from "./platform";
 import { Store } from "./store";
@@ -17,7 +17,7 @@ import { getNews } from "./news";
 import { getBanks } from "./banks";
 import { portfolioHistory } from "./portfolio";
 import { buildAiContext, systemPrompt } from "./context";
-import { buildExcel, buildPdf, buildReportHtml, type ReportInput } from "./reports";
+import { buildDocHtml, buildDocPdf, buildExcel, buildPdf, buildReportHtml, type ReportInput } from "./reports";
 import { checkDeal, dealToText } from "./deals";
 import { modelLabel } from "./models";
 import { CloudService } from "./cloud";
@@ -238,7 +238,7 @@ export class Backend {
     const profile = this.store.getData(userId, "profile");
     const ym = currentYm();
     const month = summarizeMonth(this.store.getData(userId, "expenses"), ym, profile.salary, profile.extraIncome);
-    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym, new Date(), billsPending(this.store.getData(userId, "bills"), ym));
+    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym, new Date(), pendingFor(this.store.getData(userId, "bills"), this.store.getData(userId, "planned"), ym));
     const invoicesOpen = budget.invoicesOpen;
     const accounts = this.store.getData(userId, "accounts");
     return {
@@ -372,7 +372,7 @@ export class Backend {
     this.on("data:getAll", () => this.store.getAllData(this.uid()));
     this.on("data:set", (a: { key: UserDataKey; value: UserDataMap[UserDataKey] }) => {
       if (!USER_DATA_KEYS.includes(a.key)) throw new AppError("INVALID", "Dado inválido.");
-      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts", "bills", "memory"].includes(a.key);
+      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts", "bills", "memory", "planned"].includes(a.key);
       if (isArray !== Array.isArray(a.value) || a.value === null || typeof a.value !== "object") throw new AppError("INVALID", "Formato inválido.");
       this.store.setData(this.uid(), a.key, a.value);
       this.cloud.schedulePush(this.uid());
@@ -545,6 +545,44 @@ export class Backend {
         html: () => buildReportHtml(input),
         xlsx: () => buildExcel(input),
         pdf: () => buildPdf(input),
+      });
+    });
+
+    // ---- planos do Assistente (gastos que vão vir) ----
+    this.on("plans:expense", async (a: { id: string }) => {
+      const userId = this.uid();
+      const item = this.store.getData(userId, "planned").find((p) => p.id === a.id);
+      if (!item) throw new AppError("NOT_FOUND", "Gasto planejado não encontrado.");
+      const months = monthsUntil(item.date);
+      const date = item.date.split("-").reverse().join("/");
+      const ask = `Monte um plano para eu conseguir pagar "${item.description}" de ${item.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} em ${date} (faltam cerca de ${months} ${months === 1 ? "mês" : "meses"}) sem me endividar.${item.notes ? ` Observação: ${item.notes}.` : ""}
+Use meus dados reais (renda, disponível do mês, faturas, contas fixas, saldos, outros gastos planejados). Estrutura:
+1. Diagnóstico em 2 frases: dá ou não dá com o que sobra hoje.
+2. Quanto guardar por semana ou por mês e onde deixar o dinheiro até a data (algo com liquidez diária).
+3. O que cortar ou ajustar, com valores.
+4. Um checklist com datas, uma linha por passo, exatamente no formato "- [ ] DD/MM: ação com valor" (de hoje até a data do gasto).
+5. Um plano B se apertar.
+Máximo de 350 palavras.`;
+      let text: string;
+      try {
+        text = await this.ai.complete(await this.aiMessages(userId, "financas", [{ role: "user", content: ask }]), undefined, 1800);
+      } catch (err) {
+        throw new AppError("AI_ERROR", this.aiError(err));
+      }
+      return { createdAt: new Date().toISOString(), text, steps: parsePlanSteps(text) };
+    });
+    this.on("plans:export", async (a: { title: string; subtitle?: string; markdown: string; fileName?: string }) => {
+      const title = String(a.title ?? "Plano").slice(0, 120);
+      const subtitle = String(a.subtitle ?? `Gerado em ${new Date().toLocaleDateString("pt-BR")}`).slice(0, 200);
+      const markdown = String(a.markdown ?? "");
+      const safe = (a.fileName ?? title).normalize("NFD").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "Plano";
+      return p.saveReport({
+        ym: currentYm(),
+        format: "pdf",
+        fileName: `Investa-${safe}.pdf`,
+        html: () => buildDocHtml(title, subtitle, markdown),
+        xlsx: () => Promise.reject(new AppError("INVALID", "Este documento só sai em PDF.")),
+        pdf: () => buildDocPdf(title, subtitle, markdown),
       });
     });
 

@@ -1,4 +1,4 @@
-import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, Bill, RateType } from "./types";
+import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, Bill, PlannedExpense, PlanStep, RateType } from "./types";
 
 export interface Rates {
   cdi: number;
@@ -289,6 +289,47 @@ export function billDueDate(bill: Bill, ym: string): string {
 /** Soma das contas fixas ativas ainda não pagas no mês. */
 export function billsPending(bills: Bill[], ym: string): number {
   return round2(bills.filter((b) => b.active && !b.paid.includes(ym)).reduce((s, b) => s + b.amount, 0));
+}
+
+/** Gastos planejados para o mês que ainda não aconteceram. */
+export function plannedPending(planned: PlannedExpense[], ym: string): number {
+  return round2(planned.filter((p) => !p.done && p.date.startsWith(ym)).reduce((s, p) => s + p.amount, 0));
+}
+
+/** Contas fixas não pagas + gastos planejados do mês: já comprometidos. */
+export function pendingFor(bills: Bill[], planned: PlannedExpense[], ym: string): number {
+  return round2(billsPending(bills, ym) + plannedPending(planned, ym));
+}
+
+/** Meses inteiros até uma data (mínimo 1), para dividir quanto guardar por mês. */
+export function monthsUntil(date: string, today = new Date()): number {
+  const [y, m] = date.split("-").map(Number);
+  return Math.max(1, (y - today.getFullYear()) * 12 + (m - 1 - today.getMonth()));
+}
+
+/** Lê as linhas "- [ ] 15/11: guardar R$ 100" de um plano em Markdown. */
+export function parsePlanSteps(md: string, today = new Date()): PlanStep[] {
+  const steps: PlanStep[] = [];
+  let i = 0;
+  for (const raw of md.split("\n")) {
+    const m = raw.match(/^\s*[-*]\s*\[( |x|X)\]\s*(.+)$/);
+    if (!m) continue;
+    let text = m[2].trim().replace(/\*\*/g, "");
+    let date: string | undefined;
+    const d = text.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s*[:\-–—]?\s*/);
+    if (d) {
+      const day = Number(d[1]);
+      const month = Number(d[2]);
+      let year = d[3] ? Number(d[3].length === 2 ? `20${d[3]}` : d[3]) : today.getFullYear();
+      if (!d[3] && month < today.getMonth() + 1) year += 1;
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+        date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        text = text.slice(d[0].length).trim();
+      }
+    }
+    steps.push({ id: `s${i++}`, text, date, done: m[1].toLowerCase() === "x" });
+  }
+  return steps;
 }
 
 export function monthBudget(summary: MonthSummary, invoices: Invoice[], ym: string, today = new Date(), pendingBills = 0): MonthBudget {

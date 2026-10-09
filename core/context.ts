@@ -1,7 +1,7 @@
 import type { AiMode, CreditRatesData, Indicators, Quote, UserDataMap } from "@shared/types";
 import { displaySymbol, LIQUID_UNIVERSE } from "@shared/catalog";
 import { institutionLabel } from "@shared/banks";
-import { addMonthsYm, annualRate, billsPending, currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth, ymLabel } from "@shared/finance";
+import { addMonthsYm, annualRate, pendingFor, currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth, ymLabel } from "@shared/finance";
 import { getCopom, getIndicators } from "./bcb";
 import { getCreditRates } from "./banks";
 import { getNews } from "./news";
@@ -218,7 +218,11 @@ function moneySection(lines: string[], data: UserDataMap, detailed: boolean): vo
     if (biggest.length) lines.push(`- Maiores lançamentos do mês: ${biggest.map((e) => `${e.expense.description} ${brl(e.amount)} (${e.expense.category})`).join("; ")}`);
   }
   const bills = (data.bills ?? []).filter((b) => b.active);
-  const budget = monthBudget(month, data.invoices ?? [], ym, new Date(), billsPending(bills, ym));
+  const planned = (data.planned ?? []).filter((p) => !p.done);
+  const budget = monthBudget(month, data.invoices ?? [], ym, new Date(), pendingFor(bills, planned, ym));
+  if (planned.length) {
+    lines.push(`- Gastos que vão vir: ${planned.map((p) => `${p.description} ${brl(p.amount)} em ${brDate(p.date)}${p.plan ? " (já tem plano)" : ""}`).join("; ")}`);
+  }
   if (bills.length) {
     lines.push(`- Contas fixas: ${bills.map((b) => `${b.name} ${brl(b.amount)} (dia ${b.dueDay}${b.paid.includes(ym) ? ", paga este mês" : ""})`).join("; ")}`);
   }

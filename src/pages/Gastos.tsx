@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import type { Expense, PaymentMethod } from "@shared/types";
-import { addMonthsYm, billsPending, currentYm, monthBudget, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry } from "@shared/finance";
+import { addMonthsYm, pendingFor, currentYm, monthBudget, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry } from "@shared/finance";
 import { institutionLabel } from "@shared/banks";
 import { api, uid } from "@/lib/api";
 import { brl, dateBR, pct } from "@/lib/format";
@@ -43,6 +43,7 @@ import { InstitutionSelect } from "@/components/market";
 import { InvoicesCard } from "@/components/Invoices";
 import { AccountsCard } from "@/components/Accounts";
 import { BillsCard } from "@/components/Bills";
+import { PlannedCard } from "@/components/Planned";
 import { useAssistant } from "@/store/assistant";
 import { useAsync } from "@/hooks/useAsync";
 
@@ -222,7 +223,8 @@ export function Gastos() {
   const planned = profile.fixedExpenses + profile.variableExpenses;
   const invoices = useUserData("invoices");
   const bills = useUserData("bills");
-  const budget = useMemo(() => monthBudget(summary, invoices, ym, new Date(), billsPending(bills, ym)), [summary, invoices, bills, ym]);
+  const plannedList = useUserData("planned");
+  const budget = useMemo(() => monthBudget(summary, invoices, ym, new Date(), pendingFor(bills, plannedList, ym)), [summary, invoices, bills, plannedList, ym]);
   const donut = summary.byCategory.map((c) => ({ label: c.category, value: c.total, color: catColor(c.category) }));
 
   const grouped = useMemo(() => {
@@ -318,7 +320,7 @@ export function Gastos() {
           <div className="text-[12px] text-muted mt-1">
             {pct(budget.ratio * 100, 0, false)} da renda · gastos {brl(budget.spentDirect)}
             {budget.invoices > 0 ? ` + faturas ${brl(budget.invoices)}` : ""}
-            {budget.pendingBills > 0 ? ` + contas fixas ${brl(budget.pendingBills)}` : ""}
+            {budget.pendingBills > 0 ? ` + contas e planejados ${brl(budget.pendingBills)}` : ""}
           </div>
         </Card>
         <Card>
@@ -344,6 +346,7 @@ export function Gastos() {
       <AccountsCard ym={ym} summary={summary} />
       <InvoicesCard ym={ym} summary={summary} />
       <BillsCard ym={ym} />
+      <PlannedCard />
 
       {summary.entries.length === 0 ? (
         <Card>

@@ -12,6 +12,8 @@ export const INVOKE_CHANNELS = [
   "users:resetPassword",
   "users:delete",
   "cloud:sync",
+  "plans:expense",
+  "plans:export",
   "data:getAll",
   "data:set",
   "notifications:list",
