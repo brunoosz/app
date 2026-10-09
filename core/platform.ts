@@ -23,7 +23,7 @@ export interface AiFileConfig {
 
 export interface ReportFile {
   ym: string;
-  format: "pdf" | "xlsx";
+  format: "pdf" | "xlsx" | "json";
   fileName: string;
   /** Relatório em HTML (usado para gerar o PDF no desktop). */
   html: () => string;
@@ -31,6 +31,8 @@ export interface ReportFile {
   xlsx: () => Promise<Uint8Array>;
   /** PDF montado sem navegador (usado no celular). */
   pdf: () => Promise<Uint8Array>;
+  /** Conteúdo em texto (backup em JSON). */
+  json?: () => string;
 }
 
 export interface Platform {
@@ -51,6 +53,11 @@ export interface Platform {
   saveReport(report: ReportFile): Promise<{ path: string } | null>;
   openExternal(url: string): void;
   setTheme?(theme: "dark" | "light"): void;
+  /**
+   * Ditado por voz. "text": o texto já veio (celular). "system": o sistema
+   * vai digitar no campo focado (digitação por voz do Windows).
+   */
+  voiceInput?(): Promise<{ mode: "text" | "system"; text?: string }>;
 }
 
 export function toHex(bytes: Uint8Array): string {

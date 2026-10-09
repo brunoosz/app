@@ -21,6 +21,8 @@ import {
   Wallet,
   Plus,
   Trash,
+  Download,
+  Upload,
 } from "lucide-react";
 import clsx from "clsx";
 import type { AiConfigInfo, FinancialProfile, UserSettings } from "@shared/types";
@@ -37,6 +39,74 @@ import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { ExpenseFields, IncomeFields, InvestFields, ProfileFields, RISK_LABEL, totalExpenses, totalIncome } from "@/components/ProfileForm";
 import { ErrorBanner } from "@/pages/auth/Login";
 
+
+/** Cópia de todos os dados da conta num arquivo, para guardar fora do app ou restaurar. */
+function BackupSection() {
+  const toast = useUi((s) => s.toast);
+  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const doExport = async () => {
+    setBusy("export");
+    try {
+      const res = await api.backup.export();
+      if (res) toast({ title: "Backup salvo", message: res.path, tone: "success" });
+    } catch (err) {
+      toastError(err, "Não foi possível salvar o backup");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const doImport = async (json: string) => {
+    setBusy("import");
+    try {
+      const data = await api.backup.import(json);
+      useSession.setState({ data });
+      toast({ title: "Backup restaurado", message: "Seus dados foram substituídos pelos do arquivo.", tone: "success" });
+    } catch (err) {
+      toastError(err, "Não foi possível restaurar");
+    } finally {
+      setBusy(null);
+      setPending(null);
+    }
+  };
+  return (
+    <Card>
+      <div className="text-[13.5px] text-muted">
+        Salve uma cópia de tudo (gastos, faturas, contas, carteira, metas, caixinhas, aulas e memória do Assistente) num arquivo. Com a nuvem ligada, os dados já ficam guardados na
+        conta; o backup é uma garantia a mais.
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <Button variant="secondary" icon={Download} loading={busy === "export"} onClick={() => void doExport()}>
+          Salvar backup
+        </Button>
+        <Button variant="ghost" icon={Upload} loading={busy === "import"} onClick={() => fileRef.current?.click()}>
+          Restaurar de um arquivo
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) setPending(await f.text());
+          }}
+        />
+      </div>
+      <ConfirmDialog
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={() => pending && void doImport(pending)}
+        title="Restaurar este backup?"
+        message="Os dados atuais desta conta serão substituídos pelos do arquivo. Faça um backup antes, se quiser guardar os de agora."
+        confirmLabel="Restaurar"
+        danger
+      />
+    </Card>
+  );
+}
 
 /** O que o Assistente guardou sobre a pessoa: ver, editar, apagar ou adicionar. */
 function MemorySection() {
@@ -652,6 +722,10 @@ export function Configuracoes() {
             </div>
           </Section>
         )}
+
+        <Section title="Backup">
+          <BackupSection />
+        </Section>
 
         <Section title="Sobre">
           <ListGroup>

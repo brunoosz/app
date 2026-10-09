@@ -133,6 +133,11 @@ export const api = {
   },
 
   exportReport: (ym: string, format: "pdf" | "xlsx", withAi = false) => call<{ path: string } | null>("reports:export", { ym, format, withAi }),
+  backup: {
+    export: () => call<{ path: string } | null>("backup:export"),
+    import: (json: string) => call<UserDataMap>("backup:import", { json }),
+  },
+  voice: () => call<{ mode: "text" | "system"; text?: string }>("voice:listen"),
   plans: {
     forExpense: (id: string) => call<SavingPlan>("plans:expense", { id }),
     exportPdf: (title: string, markdown: string, subtitle?: string) => call<{ path: string } | null>("plans:export", { title, markdown, subtitle }),

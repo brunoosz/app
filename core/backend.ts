@@ -666,6 +666,52 @@ ${resultsToContext(results)}`;
       });
     });
 
+    // ---- backup em arquivo ----
+    this.on("backup:export", async () => {
+      const userId = this.uid();
+      const user = this.store.findUser(userId)!;
+      const data = this.store.getAllData(userId);
+      const payload = JSON.stringify({ app: "Investa", version: 1, exportedAt: new Date().toISOString(), user: { name: user.name, username: user.username }, data }, null, 2);
+      const day = new Date().toISOString().slice(0, 10);
+      return p.saveReport({
+        ym: currentYm(),
+        format: "json",
+        fileName: `Investa-backup-${user.username}-${day}.json`,
+        html: () => "",
+        xlsx: () => Promise.reject(new AppError("INVALID", "Formato inválido.")),
+        pdf: () => Promise.reject(new AppError("INVALID", "Formato inválido.")),
+        json: () => payload,
+      });
+    });
+    this.on("backup:import", async (a: { json: string }) => {
+      const userId = this.uid();
+      let parsed: { app?: string; data?: Record<string, unknown> };
+      try {
+        parsed = JSON.parse(String(a.json ?? ""));
+      } catch {
+        throw new AppError("INVALID", "Arquivo inválido: não é um backup do Investa.");
+      }
+      if (parsed.app !== "Investa" || !parsed.data || typeof parsed.data !== "object") throw new AppError("INVALID", "Arquivo inválido: não é um backup do Investa.");
+      const clean: Record<string, unknown> = {};
+      for (const key of USER_DATA_KEYS) {
+        const v = parsed.data[key];
+        if (v === undefined || v === null || typeof v !== "object") continue;
+        const isArray = Array.isArray(this.store.getData(userId, key));
+        if (Array.isArray(v) !== isArray) continue;
+        clean[key] = v;
+      }
+      if (!Object.keys(clean).length) throw new AppError("INVALID", "O backup não tem dados para restaurar.");
+      this.store.replaceData(userId, { ...this.store.rawData(userId), ...clean });
+      this.cloud.schedulePush(userId);
+      this.engine.runNow();
+      return this.store.getAllData(userId);
+    });
+
+    this.on("voice:listen", async () => {
+      if (!p.voiceInput) throw new AppError("UNSUPPORTED", "Ditado por voz não disponível neste aparelho.");
+      return p.voiceInput();
+    });
+
     // ---- janela e sistema ----
     this.on("window:setTheme", (a: { theme: "dark" | "light" }) => {
       const theme = a.theme === "light" ? "light" : "dark";

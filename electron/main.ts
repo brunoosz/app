@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { INVOKE_CHANNELS } from "@shared/ipc";
 import { Backend } from "../core/backend";
 import { setBrowserFetch } from "../core/http";
@@ -108,12 +109,15 @@ function createPlatform(): Platform {
     aiFileConfig: () => aiFileConfig(configDirs),
     async saveReport(report) {
       const result = await dialog.showSaveDialog(win!, {
-        title: "Salvar relatório de gastos",
+        title: report.format === "json" ? "Salvar backup" : "Salvar arquivo",
         defaultPath: path.join(app.getPath("documents"), report.fileName),
-        filters: report.format === "pdf" ? [{ name: "PDF", extensions: ["pdf"] }] : [{ name: "Excel", extensions: ["xlsx"] }],
+        filters:
+          report.format === "pdf" ? [{ name: "PDF", extensions: ["pdf"] }] : report.format === "json" ? [{ name: "Backup do Investa", extensions: ["json"] }] : [{ name: "Excel", extensions: ["xlsx"] }],
       });
       if (result.canceled || !result.filePath) return null;
-      if (report.format === "xlsx") {
+      if (report.format === "json") {
+        fs.writeFileSync(result.filePath, report.json?.() ?? "{}", "utf8");
+      } else if (report.format === "xlsx") {
         fs.writeFileSync(result.filePath, await report.xlsx());
       } else {
         const tmp = path.join(os.tmpdir(), `investa-relatorio-${Date.now()}.html`);
@@ -132,6 +136,15 @@ function createPlatform(): Platform {
       return { path: result.filePath };
     },
     openExternal: (url) => void shell.openExternal(url),
+    // Abre a digitação por voz do Windows (Win+H), que escreve no campo focado em português.
+    async voiceInput() {
+      if (process.platform !== "win32") throw new Error("A digitação por voz está disponível no Windows e no celular.");
+      const script =
+        "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class K{[DllImport(\"user32.dll\")]public static extern void keybd_event(byte b,byte s,uint f,UIntPtr e);}';" +
+        "[K]::keybd_event(0x5B,0,0,[UIntPtr]::Zero);[K]::keybd_event(0x48,0,0,[UIntPtr]::Zero);[K]::keybd_event(0x48,0,2,[UIntPtr]::Zero);[K]::keybd_event(0x5B,0,2,[UIntPtr]::Zero)";
+      spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script], { windowsHide: true, stdio: "ignore" }).on("error", () => undefined);
+      return { mode: "system" as const };
+    },
     setTheme(theme) {
       const c = themeColors(theme);
       if (win && process.platform !== "darwin") {

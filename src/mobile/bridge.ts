@@ -2,7 +2,10 @@
 // mesmo, dentro do WebView, e responde pelo mesmo window.investa que o
 // Electron expõe no desktop. As requisições às fontes de dados passam pela
 // rede nativa (CapacitorHttp), sem bloqueio de CORS.
-import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { Capacitor, CapacitorHttp, registerPlugin } from "@capacitor/core";
+
+/** Plugin nativo do app (android/…/VoiceInputPlugin.java): ditado pelo reconhecimento de voz do Android. */
+const VoiceInput = registerPlugin<{ listen(o: { language?: string; prompt?: string }): Promise<{ text: string }> }>("VoiceInput");
 import { App } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
@@ -132,12 +135,18 @@ export async function installMobileBridge(): Promise<void> {
       }).catch(() => undefined);
     },
     async saveReport(report) {
-      const data = report.format === "xlsx" ? await report.xlsx() : await report.pdf();
-      const written = await Filesystem.writeFile({ path: report.fileName, data: bytesToBase64(data), directory: Directory.Cache });
+      const written =
+        report.format === "json"
+          ? await Filesystem.writeFile({ path: report.fileName, data: report.json?.() ?? "{}", directory: Directory.Cache, encoding: Encoding.UTF8 })
+          : await Filesystem.writeFile({ path: report.fileName, data: bytesToBase64(report.format === "xlsx" ? await report.xlsx() : await report.pdf()), directory: Directory.Cache });
       await Share.share({ title: report.fileName, files: [written.uri], dialogTitle: "Salvar ou enviar relatório" }).catch(() => undefined);
       return { path: report.fileName };
     },
     openExternal: (url) => void Browser.open({ url }),
+    async voiceInput() {
+      const r = await VoiceInput.listen({ language: "pt-BR", prompt: "Fale com o Assistente" });
+      return { mode: "text" as const, text: r.text };
+    },
     setTheme(theme) {
       void StatusBar.setStyle({ style: theme === "light" ? Style.Light : Style.Dark }).catch(() => undefined);
       void StatusBar.setBackgroundColor({ color: theme === "light" ? "#F2F4F8" : "#0B0F1A" }).catch(() => undefined);

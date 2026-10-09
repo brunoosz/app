@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Brain, Globe, ChartLine, Check, CircleHelp, Copy, Trash2, X, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowUp, Brain, Globe, Mic, ChartLine, Check, CircleHelp, Copy, Trash2, X, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import type { AiEvent, AiMode, ChatMessage } from "@shared/types";
 import { AI_MODES, ASSISTANT_NAME, modeInfo, splitMemory } from "@shared/ai";
@@ -167,6 +167,26 @@ export function Assistente() {
   const [input, setInput] = useState("");
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | undefined>();
+  const [listening, setListening] = useState(false);
+  const toastVoice = useUi((s) => s.toast);
+  // Ditado: no celular o Android devolve o texto; no Windows, a digitação por voz escreve direto na caixa.
+  const dictate = async () => {
+    inputRef.current?.focus();
+    setListening(true);
+    try {
+      const r = await api.voice();
+      if (r.mode === "text") {
+        if (r.text) setInput((v) => (v ? `${v.trimEnd()} ${r.text}` : r.text!));
+      } else {
+        toastVoice({ title: "Pode falar", message: "A digitação por voz do Windows vai escrever na caixa de mensagem. Clique de novo no microfone dela para parar.", tone: "info" });
+      }
+    } catch (err) {
+      toastVoice({ title: "Ditado por voz indisponível", message: (err as Error).message, tone: "error" });
+    } finally {
+      setListening(false);
+      inputRef.current?.focus();
+    }
+  };
   const [web, setWebState] = useState(() => {
     try {
       return localStorage.getItem("investa-assistente-web") === "1";
@@ -442,6 +462,18 @@ export function Assistente() {
               placeholder={hasKey ? `Mensagem para o ${ASSISTANT_NAME} (${current.short})` : "O Assistente ainda não foi ativado"}
               className="flex-1 resize-none bg-transparent outline-none text-[15px] py-2 max-h-[180px] placeholder:text-muted/70"
             />
+            {hasKey && (
+              <button
+                type="button"
+                onClick={() => void dictate()}
+                disabled={listening}
+                title="Falar em vez de digitar"
+                aria-label="Gravar voz"
+                className={clsx("h-10 w-10 rounded-xl inline-flex items-center justify-center transition shrink-0", listening ? "bg-danger/15 text-danger animate-pulse" : "text-muted hover:text-fg hover:bg-line/10")}
+              >
+                <Mic size={18} />
+              </button>
+            )}
             {info.data?.hasSearch && (
               <button
                 type="button"
