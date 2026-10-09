@@ -2,7 +2,7 @@
 // o app do celular criam este backend com o adaptador da sua plataforma.
 import type { AiChatRequest, AiMode, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { USER_DATA_KEYS } from "@shared/types";
-import { currentYm, summarizeMonth } from "@shared/finance";
+import { currentYm, monthBudget, summarizeMonth } from "@shared/finance";
 import { modeInfo } from "@shared/ai";
 import type { Platform } from "./platform";
 import { Store } from "./store";
@@ -238,14 +238,13 @@ export class Backend {
     const profile = this.store.getData(userId, "profile");
     const ym = currentYm();
     const month = summarizeMonth(this.store.getData(userId, "expenses"), ym, profile.salary, profile.extraIncome);
-    const invoicesOpen = this.store
-      .getData(userId, "invoices")
-      .filter((i) => i.ym === ym && !i.paid)
-      .reduce((s, i) => s + i.amount, 0);
+    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym);
+    const invoicesOpen = budget.invoicesOpen;
     const accounts = this.store.getData(userId, "accounts");
     return {
       monthBalance: month.balance,
       invoicesOpen,
+      available: budget.available,
       emergencyReserve: profile.emergencyReserve,
       monthlyIncome: profile.salary + profile.extraIncome,
       accountsBalance: accounts.length ? accounts.reduce((s, a) => s + a.balance, 0) : undefined,

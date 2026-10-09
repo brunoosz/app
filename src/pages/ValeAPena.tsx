@@ -25,7 +25,7 @@ function quickVerdict(d: DealCheck, installments: number): { tone: "success" | "
   const lines: string[] = [];
   const price = d.currentPrice;
   const perMonth = price ? price / Math.max(1, installments) : undefined;
-  const free = d.budget.monthBalance - d.budget.invoicesOpen;
+  const free = d.budget.available ?? d.budget.monthBalance - d.budget.invoicesOpen;
   let tone: "success" | "warning" | "danger" = "success";
 
   if (perMonth !== undefined) {
@@ -257,8 +257,8 @@ export function ValeAPena() {
                   <span className="tabular">{brl(result.budget.monthlyIncome)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Saldo previsto</span>
-                  <span className="tabular">{brl(result.budget.monthBalance)}</span>
+                  <span className="text-muted">Disponível no mês</span>
+                  <span className="tabular">{brl(result.budget.available ?? result.budget.monthBalance)}</span>
                 </div>
                 {result.budget.accountsBalance !== undefined && (
                   <div className="flex justify-between">

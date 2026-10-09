@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import type { Expense, PaymentMethod } from "@shared/types";
-import { addMonthsYm, currentYm, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry } from "@shared/finance";
+import { addMonthsYm, currentYm, monthBudget, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry } from "@shared/finance";
 import { institutionLabel } from "@shared/banks";
 import { api, uid } from "@/lib/api";
 import { brl, dateBR, pct } from "@/lib/format";
@@ -219,6 +219,8 @@ export function Gastos() {
   const navigate = useNavigate();
   const summary = useMemo(() => summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), [expenses, ym, profile.salary, profile.extraIncome]);
   const planned = profile.fixedExpenses + profile.variableExpenses;
+  const invoices = useUserData("invoices");
+  const budget = useMemo(() => monthBudget(summary, invoices, ym), [summary, invoices, ym]);
   const donut = summary.byCategory.map((c) => ({ label: c.category, value: c.total, color: catColor(c.category) }));
 
   const grouped = useMemo(() => {
@@ -303,19 +305,31 @@ export function Gastos() {
           {summary.extraIncome > 0 && <div className="text-[12.5px] text-success">+ {brl(summary.extraIncome)} extras</div>}
         </Card>
         <Card>
-          <div className="text-[13px] text-muted">Gastos</div>
-          <div className="text-[22px] font-bold tabular mt-1">{brl(summary.spent)}</div>
-          {planned > 0 && (
-            <>
-              <ProgressBar value={summary.spent / planned} className="mt-2" height={6} color={summary.spent > planned ? "rgb(var(--danger))" : undefined} />
-              <div className="text-[12px] text-muted mt-1">{pct((summary.spent / planned) * 100, 0, false)} do planejado ({brl(planned)})</div>
-            </>
-          )}
+          <div className="text-[13px] text-muted">Comprometido</div>
+          <div className="text-[22px] font-bold tabular mt-1">{brl(budget.committed)}</div>
+          <ProgressBar
+            value={Math.min(1, budget.ratio)}
+            className="mt-2"
+            height={6}
+            color={budget.ratio > 1 ? "rgb(var(--danger))" : budget.ratio > 0.8 ? "rgb(var(--warning))" : undefined}
+          />
+          <div className="text-[12px] text-muted mt-1">
+            {pct(budget.ratio * 100, 0, false)} da renda · gastos {brl(budget.spentDirect)}
+            {budget.invoices > 0 ? ` + faturas ${brl(budget.invoices)}` : ""}
+          </div>
         </Card>
         <Card>
-          <div className="text-[13px] text-muted">Saldo</div>
-          <div className={clsx("text-[22px] font-bold tabular mt-1", summary.balance >= 0 ? "text-success" : "text-danger")}>{brl(summary.balance)}</div>
-          <div className="text-[12.5px] text-muted">{summary.balance >= 0 ? "dá para investir" : "gastou mais do que ganhou"}</div>
+          <div className="text-[13px] text-muted">Disponível para gastar</div>
+          <div className={clsx("text-[22px] font-bold tabular mt-1", budget.available >= 0 ? "text-success" : "text-danger")}>{brl(budget.available)}</div>
+          <div className="text-[12.5px] text-muted">
+            {budget.available < 0
+              ? `passou da renda em ${brl(-budget.available)}`
+              : budget.perDay !== undefined
+                ? `${brl(budget.perDay)} por dia até o fim do mês`
+                : planned > 0 && summary.spent > planned
+                  ? "acima do planejado"
+                  : "depois de gastos e faturas"}
+          </div>
         </Card>
         <Card>
           <div className="text-[13px] text-muted">Parcelas futuras</div>

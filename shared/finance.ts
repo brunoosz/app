@@ -1,4 +1,4 @@
-import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, RateType } from "./types";
+import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, RateType } from "./types";
 
 export interface Rates {
   cdi: number;
@@ -253,6 +253,51 @@ export function summarizeMonth(expenses: Expense[], ym: string, salary: number, 
     entries,
     futureInstallments,
   };
+}
+
+export interface MonthBudget {
+  /** Salário + renda extra do perfil + entradas extras lançadas. */
+  income: number;
+  /** Gastos no débito, Pix, dinheiro, boleto... e no crédito de bancos sem fatura informada. */
+  spentDirect: number;
+  /** Soma das faturas do mês (pagas e em aberto). */
+  invoices: number;
+  invoicesOpen: number;
+  committed: number;
+  available: number;
+  /** Fração da renda já comprometida (0 a 1+). */
+  ratio: number;
+  /** Só no mês atual: dias que faltam (contando hoje) e quanto dá por dia. */
+  daysLeft?: number;
+  perDay?: number;
+}
+
+/**
+ * Quanto do mês já está comprometido e quanto sobra de verdade. Compras no
+ * crédito de um banco com fatura informada entram pela fatura (não somam duas
+ * vezes); as dos outros bancos entram pelo lançamento.
+ */
+export function monthBudget(summary: MonthSummary, invoices: Invoice[], ym: string, today = new Date()): MonthBudget {
+  const monthInvoices = invoices.filter((i) => i.ym === ym);
+  const withInvoice = new Set(monthInvoices.map((i) => i.institution));
+  const spentDirect = round2(
+    summary.entries
+      .filter((e) => e.expense.type === "despesa" && !(e.expense.method === "credito" && withInvoice.has(e.expense.institution)))
+      .reduce((s, e) => s + e.amount, 0)
+  );
+  const invoiceTotal = round2(monthInvoices.reduce((s, i) => s + i.amount, 0));
+  const invoicesOpen = round2(monthInvoices.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0));
+  const income = round2(summary.income + summary.extraIncome);
+  const committed = round2(spentDirect + invoiceTotal);
+  const available = round2(income - committed);
+  const out: MonthBudget = { income, spentDirect, invoices: invoiceTotal, invoicesOpen, committed, available, ratio: income > 0 ? committed / income : committed > 0 ? 1 : 0 };
+  const cur = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  if (ym === cur) {
+    const last = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    out.daysLeft = last - today.getDate() + 1;
+    out.perDay = available > 0 ? round2(available / out.daysLeft) : 0;
+  }
+  return out;
 }
 
 export const MONTHS_PT = [

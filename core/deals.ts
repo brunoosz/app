@@ -272,7 +272,7 @@ export function dealToText(d: DealCheck, installments?: number): string {
   if (d.offers.length > 1) lines.push(`- Outras ofertas agora: ${d.offers.slice(0, 6).map((o) => `${o.store} ${o.currency} ${o.price}${o.priceBrl && o.currency !== "BRL" ? ` (≈ ${brl(o.priceBrl)})` : ""}`).join("; ")}`);
   if (!d.lowestPrice && d.kind === "produto") lines.push("- Sem histórico de preço disponível para esta loja.");
   const b = d.budget;
-  lines.push(`- Orçamento: renda mensal ${brl(b.monthlyIncome)}, saldo previsto do mês ${brl(b.monthBalance)}, faturas em aberto ${brl(b.invoicesOpen)}, reserva de emergência ${brl(b.emergencyReserve)}${b.accountsBalance !== undefined ? `, saldo nas contas hoje ${brl(b.accountsBalance)}` : ""}.`);
+  lines.push(`- Orçamento: renda mensal ${brl(b.monthlyIncome)}, disponível para gastar no mês (já descontando gastos e faturas) ${brl(b.available ?? b.monthBalance)}, faturas em aberto ${brl(b.invoicesOpen)}, reserva de emergência ${brl(b.emergencyReserve)}${b.accountsBalance !== undefined ? `, saldo nas contas hoje ${brl(b.accountsBalance)}` : ""}.`);
   for (const n of d.notes) lines.push(`- Observação: ${n}`);
   return lines.join("\n");
 }

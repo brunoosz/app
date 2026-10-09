@@ -1,7 +1,7 @@
 import type { AiMode, CreditRatesData, Indicators, Quote, UserDataMap } from "@shared/types";
 import { displaySymbol, LIQUID_UNIVERSE } from "@shared/catalog";
 import { institutionLabel } from "@shared/banks";
-import { addMonthsYm, annualRate, currentYm, projectGoal, ratesFromIndicators, summarizeMonth, ymLabel } from "@shared/finance";
+import { addMonthsYm, annualRate, currentYm, monthBudget, projectGoal, ratesFromIndicators, summarizeMonth, ymLabel } from "@shared/finance";
 import { getCopom, getIndicators } from "./bcb";
 import { getCreditRates } from "./banks";
 import { getNews } from "./news";
@@ -217,6 +217,10 @@ function moneySection(lines: string[], data: UserDataMap, detailed: boolean): vo
     const biggest = [...month.entries].sort((a, b) => b.amount - a.amount).slice(0, 8);
     if (biggest.length) lines.push(`- Maiores lançamentos do mês: ${biggest.map((e) => `${e.expense.description} ${brl(e.amount)} (${e.expense.category})`).join("; ")}`);
   }
+  const budget = monthBudget(month, data.invoices ?? [], ym);
+  lines.push(
+    `- Disponível para gastar em ${ymLabel(ym)}: ${brl(budget.available)} (renda ${brl(budget.income)} − gastos ${brl(budget.spentDirect)} − faturas ${brl(budget.invoices)}; ${n2(budget.ratio * 100)}% da renda comprometida)${budget.perDay !== undefined && budget.available > 0 ? `, cerca de ${brl(budget.perDay)} por dia até o fim do mês` : ""}.`
+  );
   const accounts = data.accounts ?? [];
   if (accounts.length) {
     const total = accounts.reduce((s, a) => s + a.balance, 0);

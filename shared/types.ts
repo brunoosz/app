@@ -532,5 +532,5 @@ export interface DealCheck {
   offers: DealOffer[];
   historyLinks: { label: string; url: string }[];
   notes: string[];
-  budget: { monthBalance: number; invoicesOpen: number; emergencyReserve: number; monthlyIncome: number; accountsBalance?: number };
+  budget: { monthBalance: number; invoicesOpen: number; emergencyReserve: number; monthlyIncome: number; accountsBalance?: number; available?: number };
 }
