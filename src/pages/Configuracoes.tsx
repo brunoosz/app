@@ -19,11 +19,13 @@ import {
   Sun,
   UserRound,
   Wallet,
+  Plus,
+  Trash,
 } from "lucide-react";
 import clsx from "clsx";
 import type { FinancialProfile, UserSettings } from "@shared/types";
 import { ROLE_LABEL } from "@shared/types";
-import { api } from "@/lib/api";
+import { api, uid } from "@/lib/api";
 import { brl, relativeTime } from "@/lib/format";
 import { isOwner, useSession, useUserData } from "@/store/session";
 import { toastError, useUi } from "@/store/ui";
@@ -35,6 +37,69 @@ import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { ExpenseFields, IncomeFields, InvestFields, ProfileFields, RISK_LABEL, totalExpenses, totalIncome } from "@/components/ProfileForm";
 import { ErrorBanner } from "@/pages/auth/Login";
 
+
+/** O que o Assistente guardou sobre a pessoa: ver, editar, apagar ou adicionar. */
+function MemorySection() {
+  const memory = useUserData("memory");
+  const update = useSession((s) => s.update);
+  const toast = useUi((s) => s.toast);
+  const [draft, setDraft] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
+  const add = () => {
+    const text = draft.trim();
+    if (text.length < 3) return;
+    update("memory", (list) => [...list, { id: uid(), text, createdAt: new Date().toISOString() }]);
+    setDraft("");
+  };
+  return (
+    <Card>
+      <div className="text-[13.5px] text-muted mb-3">
+        Gostos, hobbies e planos que você contou ao Assistente. Ele usa isso para personalizar as respostas, como numa análise de compra. Toque no texto para editar.
+      </div>
+      {memory.length > 0 ? (
+        <div className="space-y-2">
+          {memory.map((m) => (
+            <div key={m.id} className="flex items-center gap-2">
+              <Input
+                value={m.text}
+                onChange={(e) => update("memory", (list) => list.map((x) => (x.id === m.id ? { ...x, text: e.target.value } : x)))}
+                onBlur={(e) => !e.target.value.trim() && update("memory", (list) => list.filter((x) => x.id !== m.id))}
+                aria-label="Item da memória"
+              />
+              <Button size="icon-sm" variant="ghost" icon={Trash} aria-label="Apagar da memória" onClick={() => update("memory", (list) => list.filter((x) => x.id !== m.id))} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-[13.5px] text-muted">Nada guardado ainda. Conte ao Assistente o que você gosta de fazer, ou adicione aqui.</div>
+      )}
+      <div className="flex gap-2 mt-3">
+        <Input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Ex.: gosto de jogar videogame e comer fora" />
+        <Button variant="secondary" icon={Plus} onClick={add} disabled={draft.trim().length < 3}>
+          Adicionar
+        </Button>
+      </div>
+      {memory.length > 0 && (
+        <Button size="sm" variant="ghost" className="mt-3 text-danger" icon={Trash} onClick={() => setConfirmClear(true)}>
+          Apagar toda a memória
+        </Button>
+      )}
+      <ConfirmDialog
+        open={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => {
+          update("memory", []);
+          setConfirmClear(false);
+          toast({ title: "Memória apagada", tone: "success" });
+        }}
+        title="Apagar toda a memória?"
+        message="O Assistente esquece tudo o que você contou. Isso não apaga as conversas."
+        confirmLabel="Apagar"
+        danger
+      />
+    </Card>
+  );
+}
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
@@ -467,6 +532,10 @@ export function Configuracoes() {
             <ListRow icon={PiggyBank} iconColor="#FBBF24" title="Gastos e investimentos" subtitle={`Gasta ${brl(totalExpenses(profile))} · investe ${brl(profile.monthlyInvest)} por mês`} onClick={() => setSheet("financeiro")} chevron />
             <ListRow icon={UserRound} iconColor="#A78BFA" title="Perfil de investidor" subtitle="Usado pelo Assistente para personalizar sugestões" right={<Badge tone="secondary">{RISK_LABEL[profile.riskProfile]}</Badge>} onClick={() => setSheet("financeiro")} chevron />
           </ListGroup>
+        </Section>
+
+        <Section title="Memória do Assistente">
+          <MemorySection />
         </Section>
 
         <Section title="Aparência">

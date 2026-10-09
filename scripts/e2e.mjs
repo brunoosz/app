@@ -176,6 +176,13 @@ await shot("bancos-credito");
 await go("alertas", "alertas", 3000);
 await go("usuarios", "usuarios", 1500);
 await go("configuracoes", "configuracoes", 1500);
+// Memória do Assistente: adicionar um item à mão.
+await win.getByPlaceholder("Ex.: gosto de jogar videogame e comer fora").fill("Gosta de jogar videogame");
+await win.getByRole("button", { name: "Adicionar", exact: true }).click();
+await wait(500);
+const memOk = (await win.locator('input[aria-label="Item da memória"]').count()) === 1;
+console.log(`[memoria] item salvo: ${memOk ? "sim" : "NÃO"}`);
+if (!memOk) pageErrors.push("Memória do Assistente não salvou");
 
 const notifications = await win.evaluate(() => document.querySelector('[aria-label="Notificações"]')?.textContent ?? "");
 console.log(`[notificacoes-nao-lidas] ${notifications || "0"}`);

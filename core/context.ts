@@ -267,6 +267,9 @@ export async function buildAiContext(input: ContextInput): Promise<string> {
   const { data, question, mode } = input;
   const lines: string[] = [];
   dateTimeSection(lines);
+  const memory = data.memory ?? [];
+  lines.push("\n# Memória (o que o usuário contou em conversas anteriores; use para personalizar)");
+  lines.push(memory.length ? memory.map((m) => `- ${m.text}`).join("\n") : "- Nada guardado ainda.");
 
   const mentioned = detectSymbols(question);
   const needsMarket = mode === "mercado" || mode === "professor";
@@ -434,6 +437,8 @@ const MODE_PROMPTS: Record<AiMode, string> = {
 const LANGUAGE_RULE =
   "IDIOMA: responda sempre em português do Brasil, no mesmo idioma do usuário (se ele escrever em outro idioma, use o dele). Nunca escreva o seu raciocínio, rascunho ou análise interna: mostre só a resposta final, já organizada.";
 
+const MEMORY_RULE = `MEMÓRIA: quando o usuário contar algo duradouro sobre ele que ainda não está na seção "Memória" (gostos, hobbies, rotina, objetivos, planos, situação de trabalho ou estudo), termine a resposta com uma linha por fato no formato [[lembrar: fato curto em terceira pessoa]]. Ex.: [[lembrar: gosta de jogar videogame e de comer fora nos fins de semana]]. Não use para dados que mudam todo dia, senhas ou documentos. Use a memória para personalizar: numa análise de compra, considere os gostos dele, se a compra parece impulsiva (pergunte há quanto tempo ele quer e sugira esperar alguns dias quando for cara) e o impacto nos próximos meses.`;
+
 export function systemPrompt(mode: AiMode): string {
-  return `${LANGUAGE_RULE}\n\n${MODE_PROMPTS[mode]}\n\n${BASE_RULES}\n\n${LANGUAGE_RULE}`;
+  return `${LANGUAGE_RULE}\n\n${MODE_PROMPTS[mode]}\n\n${BASE_RULES}\n\n${MEMORY_RULE}\n\n${LANGUAGE_RULE}`;
 }

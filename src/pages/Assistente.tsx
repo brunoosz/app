@@ -3,10 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, ChartLine, CircleHelp, Copy, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowUp, Brain, ChartLine, Check, CircleHelp, Copy, Trash2, X, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import type { AiEvent, AiMode, ChatMessage } from "@shared/types";
-import { AI_MODES, ASSISTANT_NAME, modeInfo } from "@shared/ai";
+import { AI_MODES, ASSISTANT_NAME, modeInfo, splitMemory } from "@shared/ai";
 import { api, uid } from "@/lib/api";
 import { timeBR } from "@/lib/format";
 import { isOwner, useSession, useUserData } from "@/store/session";
@@ -41,17 +41,35 @@ function savedMode(): AiMode {
 /** Mensagens antigas, sem modo, eram do analista de mercado. */
 const modeOf = (m: ChatMessage): AiMode => m.mode ?? "mercado";
 
-function Message({ m, streaming, onRetry }: { m: ChatMessage; streaming?: boolean; onRetry?: () => void }) {
+const ACTION = "h-7 px-2 rounded-lg text-[12px] text-muted hover:text-fg hover:bg-line/10 inline-flex items-center gap-1";
+
+function Message({ m, streaming, onRetry, onDelete }: { m: ChatMessage; streaming?: boolean; onRetry?: () => void; onDelete?: () => void }) {
   const user = useSession((s) => s.user)!;
+  const update = useSession((s) => s.update);
   const toast = useUi((s) => s.toast);
   if (m.role === "user") {
     return (
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end gap-3">
-        <div className="max-w-[78%] rounded-[22px] rounded-br-md bg-brand text-white px-4 py-2.5 text-[15px] whitespace-pre-wrap shadow-glow">{m.content}</div>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end gap-3 group">
+        <div className="flex flex-col items-end max-w-[78%]">
+          <div className="rounded-[22px] rounded-br-md bg-brand text-white px-4 py-2.5 text-[15px] whitespace-pre-wrap shadow-glow">{m.content}</div>
+          {onDelete && (
+            <button className={clsx(ACTION, "mt-1 opacity-0 group-hover:opacity-100 max-sm:opacity-60 transition")} onClick={onDelete} aria-label="Apagar mensagem">
+              <Trash2 size={13} /> Apagar
+            </button>
+          )}
+        </div>
         <Avatar name={user.name} hue={user.avatarHue} size={32} className="mt-0.5" />
       </motion.div>
     );
   }
+  const { text, items } = splitMemory(m.content);
+  const saveMemory = () => {
+    const now = new Date().toISOString();
+    update("memory", (list) => [...list, ...items.filter((t) => !list.some((x) => x.text.toLowerCase() === t.toLowerCase())).map((t) => ({ id: uid(), text: t, createdAt: now }))]);
+    update("chat", (list) => list.map((x) => (x.id === m.id ? { ...x, memoryHandled: true } : x)));
+    toast({ title: "Guardado na memória", message: "Dá para ver, editar ou apagar em Configurações.", tone: "success" });
+  };
+  const dismissMemory = () => update("chat", (list) => list.map((x) => (x.id === m.id ? { ...x, memoryHandled: true } : x)));
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex gap-3 group">
       <div className="h-8 w-8 rounded-full bg-surface border border-line/15 flex items-center justify-center shrink-0 mt-0.5">
@@ -77,7 +95,7 @@ function Message({ m, streaming, onRetry }: { m: ChatMessage; streaming?: boolea
                   ),
                 }}
               >
-                {m.content}
+                {text}
               </ReactMarkdown>
             </div>
           ) : (
@@ -89,21 +107,46 @@ function Message({ m, streaming, onRetry }: { m: ChatMessage; streaming?: boolea
             </div>
           )}
         </div>
+        {!streaming && items.length > 0 && !m.memoryHandled && (
+          <div className="mt-2 rounded-2xl border border-secondary/25 bg-secondary/[0.07] px-3.5 py-2.5 text-[13.5px]">
+            <div className="flex items-center gap-1.5 font-medium">
+              <Brain size={15} className="text-secondary" /> Guardar na memória?
+            </div>
+            <ul className="mt-1 text-muted list-disc pl-5">
+              {items.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+            <div className="flex gap-2 mt-2">
+              <Button size="sm" icon={Check} onClick={saveMemory}>
+                Guardar
+              </Button>
+              <Button size="sm" variant="ghost" icon={X} onClick={dismissMemory}>
+                Agora não
+              </Button>
+            </div>
+          </div>
+        )}
         {!streaming && m.content && (
-          <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition">
+          <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 max-sm:opacity-60 transition">
             <span className="text-[11.5px] text-muted mr-1">{timeBR(m.createdAt)}</span>
             <button
               className="h-7 px-2 rounded-lg text-[12px] text-muted hover:text-fg hover:bg-line/10 inline-flex items-center gap-1"
               onClick={() => {
-                void navigator.clipboard.writeText(m.content);
+                void navigator.clipboard.writeText(text);
                 toast({ title: "Resposta copiada", tone: "success" });
               }}
             >
               <Copy size={13} /> Copiar
             </button>
             {onRetry && (
-              <button className="h-7 px-2 rounded-lg text-[12px] text-muted hover:text-fg hover:bg-line/10 inline-flex items-center gap-1" onClick={onRetry}>
+              <button className={ACTION} onClick={onRetry}>
                 <RotateCcw size={13} /> Tentar de novo
+              </button>
+            )}
+            {onDelete && (
+              <button className={ACTION} onClick={onDelete} aria-label="Apagar resposta">
+                <Trash2 size={13} /> Apagar
               </button>
             )}
           </div>
@@ -188,7 +231,9 @@ export function Assistente() {
       const requestId = uid();
       requestRef.current = { requestId, messageId: aiMsg.id };
       scrollDown();
-      const messages = [...base.filter((x) => !x.error), userMsg].map((x) => ({ role: x.role, content: x.content })).slice(-12);
+      const messages = [...base.filter((x) => !x.error), userMsg]
+        .map((x) => ({ role: x.role, content: x.role === "assistant" ? splitMemory(x.content).text : x.content }))
+        .slice(-12);
       try {
         await api.ai.chat(requestId, messages, m, opts.attachment);
       } catch (err) {
@@ -342,7 +387,13 @@ export function Assistente() {
         ) : (
           <div className="space-y-5 pb-6 max-w-3xl mx-auto">
             {chat.map((m, i) => (
-              <Message key={m.id} m={m} streaming={m.id === streamingId} onRetry={m.role === "assistant" && i === chat.length - 1 && !streamingId ? retryLast : undefined} />
+              <Message
+                key={m.id}
+                m={m}
+                streaming={m.id === streamingId}
+                onRetry={m.role === "assistant" && i === chat.length - 1 && !streamingId ? retryLast : undefined}
+                onDelete={streamingId ? undefined : () => update("chat", (list) => list.filter((x) => x.id !== m.id))}
+              />
             ))}
           </div>
         )}

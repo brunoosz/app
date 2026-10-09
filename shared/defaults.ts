@@ -45,5 +45,6 @@ export function defaultUserData(): UserDataMap {
     invoices: [],
     accounts: [],
     bills: [],
+    memory: [],
   };
 }

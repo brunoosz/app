@@ -226,6 +226,15 @@ export interface ChatMessage {
   createdAt: string;
   error?: boolean;
   mode?: AiMode;
+  /** A sugestão de "lembrar" desta resposta já foi salva ou ignorada. */
+  memoryHandled?: boolean;
+}
+
+/** Algo que o usuário contou e o Assistente guarda para as próximas conversas. */
+export interface MemoryItem {
+  id: string;
+  text: string;
+  createdAt: string;
 }
 
 /** Fatura do cartão de um banco em um mês. */
@@ -255,6 +264,7 @@ export interface UserDataMap {
   invoices: Invoice[];
   accounts: BankAccount[];
   bills: Bill[];
+  memory: MemoryItem[];
 }
 
 /** Conta que se repete todo mês (aluguel, internet, assinatura). */
@@ -295,6 +305,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "invoices",
   "accounts",
   "bills",
+  "memory",
 ];
 
 export interface Quote {
