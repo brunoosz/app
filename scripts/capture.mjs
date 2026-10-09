@@ -520,8 +520,10 @@ async function still(name, route, { before, wait = 1200, timeout } = {}) {
 // Aquece as fontes mais lentas antes dos prints.
 await Promise.allSettled([invoke(win, "market:indicators"), invoke(win, "banks:get"), invoke(win, "market:news")]);
 
-await still("inicio", "", { wait: 3000 });
+// A Carteira vem antes da Início para as cotações já estarem carregadas
+// quando o patrimônio da Início aparece (assim o número não precisa animar).
 await still("carteira", "carteira", { wait: 2500 });
+await still("inicio", "", { wait: 3000 });
 await still("mercado", "mercado", {
   before: async () => {
     await win.getByRole("button", { name: "Ações", exact: true }).click();
@@ -555,6 +557,8 @@ await setData(win, { settings: { ...demo.settings, theme: "light" } });
 await win.evaluate(() => localStorage.setItem("investa-theme", "light"));
 await reloadApp(win);
 await cleanUi(win);
+await go(win, "carteira");
+await settle(win, { extra: 1500 });
 await still("inicio-claro", "", { wait: 3000 });
 await still("mercado-claro", "mercado", {
   before: async () => {
