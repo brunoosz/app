@@ -81,8 +81,7 @@ export class Backend {
     if (!this.cloud.enabled || !userId) return;
     try {
       const changed = await this.cloud.pull(userId);
-      const ai = await this.cloud.pullAi(userId);
-      if (ai) this.applyCloudAi(ai);
+      await this.syncAiKey(userId);
       const u = this.store.findUser(userId);
       if (u?.status === "bloqueado") {
         this.endSession();
@@ -97,6 +96,26 @@ export class Backend {
         this.platform.emit("session:ended", "Esta conta foi excluída.");
       }
       // sem internet: tenta de novo no próximo ciclo
+    }
+  }
+
+  /**
+   * A chave da IA fica guardada na nuvem: se este aparelho perdeu a dele (app
+   * reinstalado, atualização que trocou a criptografia), busca de novo; se a
+   * nuvem ainda não tem (chave colocada antes da nuvem), o Dono envia a dele.
+   */
+  private async syncAiKey(userId: string): Promise<void> {
+    const local = this.ai.resolve();
+    const ai = await this.cloud.pullAi(userId, !local.key);
+    if (ai?.apiKey) {
+      this.applyCloudAi(ai);
+      return;
+    }
+    if (ai) this.applyCloudAi(ai);
+    const r = this.ai.resolve();
+    const cloudHasKey = !!ai?.apiKey;
+    if (!cloudHasKey && r.key && r.source === "app" && this.isOwner(userId) && ai !== null) {
+      await this.cloud.pushAi(userId, { apiKey: r.key, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "" });
     }
   }
 
@@ -284,7 +303,7 @@ export class Backend {
       const cloudUser = this.cloud.enabled ? await this.cloud.login(username, password, this.auth.localPassword) : null;
       const user = cloudUser ? this.store.toPublic(cloudUser) : this.auth.login(username, password);
       this.startSession(user.id, !!a.remember);
-      if (cloudUser) void this.cloud.pullAi(user.id).then((ai) => ai && this.applyCloudAi(ai)).catch(() => undefined);
+      if (cloudUser) void this.syncAiKey(user.id).catch(() => undefined);
       return user;
     });
     this.on("auth:logout", () => {

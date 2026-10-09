@@ -40,6 +40,8 @@ export interface AiStoredConfig {
   lastUsed?: string;
   /** Modelos que falharam há pouco (erro 5xx, sem resposta): ficam de fora até o horário indicado. */
   cooldown?: Record<string, number>;
+  /** Tempo médio (ms) até a primeira palavra de cada modelo, para preferir os rápidos. */
+  latency?: Record<string, number>;
 }
 
 interface DBShape {

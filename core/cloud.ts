@@ -401,12 +401,12 @@ export class CloudService {
 
   // ---- configuração da IA (uma para todas as contas) ----
 
-  async pullAi(userId: string): Promise<{ apiKey?: string; model?: string; baseUrl?: string } | null> {
+  async pullAi(userId: string, force = false): Promise<{ apiKey?: string; model?: string; baseUrl?: string } | null> {
     const rows = await this.request<{ ai: { apiKey?: string; model?: string; baseUrl?: string }; updated_at: string }[]>("/rest/v1/app_settings?id=eq.1&select=ai,updated_at", {
       token: await this.token(userId),
     });
     const row = rows[0];
-    if (!row || row.updated_at === this.state.aiUpdatedAt) return null;
+    if (!row || (!force && row.updated_at === this.state.aiUpdatedAt)) return null;
     this.state.aiUpdatedAt = row.updated_at;
     this.store.save();
     return row.ai ?? {};

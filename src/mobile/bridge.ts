@@ -2,7 +2,7 @@
 // mesmo, dentro do WebView, e responde pelo mesmo window.investa que o
 // Electron expõe no desktop. As requisições às fontes de dados passam pela
 // rede nativa (CapacitorHttp), sem bloqueio de CORS.
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
@@ -58,18 +58,54 @@ export async function installMobileBridge(): Promise<void> {
     active = s.isActive;
   });
 
-  // A IA responde em streaming. O fetch nativo entrega a resposta inteira de uma
-  // vez, então para a NVIDIA tenta primeiro o fetch do próprio WebView.
+  // A IA responde em streaming. Tenta primeiro o fetch do próprio WebView (que
+  // entrega a resposta aos poucos); se ele falhar (CORS), usa a rede nativa,
+  // que entrega tudo de uma vez. A rede nativa não respeita o AbortSignal,
+  // então o cancelamento e o tempo-limite são feitos aqui.
   const webFetch = (window as unknown as { CapacitorWebFetch?: typeof fetch }).CapacitorWebFetch;
-  if (webFetch) {
-    setStreamFetch(async (url, init) => {
-      try {
-        return await webFetch(url, init);
-      } catch {
-        return fetch(url, init);
-      }
+  let webStreams: boolean | undefined = webFetch ? undefined : false;
+  const nativeFetch = (url: string, init: RequestInit): Promise<Response> =>
+    new Promise<Response>((resolve, reject) => {
+      const signal = init.signal;
+      const abort = () => reject(Object.assign(new Error("Cancelado"), { name: "AbortError" }));
+      if (signal?.aborted) return abort();
+      signal?.addEventListener("abort", abort, { once: true });
+      const headers = Object.fromEntries(new Headers(init.headers).entries());
+      CapacitorHttp.request({
+        url,
+        method: init.method ?? "GET",
+        headers,
+        data: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+        responseType: "text",
+        connectTimeout: 15_000,
+        readTimeout: 120_000,
+      })
+        .then((res) => {
+          signal?.removeEventListener("abort", abort);
+          const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+          resolve(new Response(body, { status: res.status, headers: res.headers }));
+        })
+        .catch((err) => {
+          signal?.removeEventListener("abort", abort);
+          reject(err);
+        });
     });
-  }
+  setStreamFetch(
+    async (url, init) => {
+      if (webFetch && webStreams !== false) {
+        try {
+          const res = await webFetch(url, init);
+          webStreams = true;
+          return res;
+        } catch (err) {
+          if (init.signal?.aborted) throw err;
+          webStreams = false;
+        }
+      }
+      return nativeFetch(url, init);
+    },
+    () => webStreams !== true
+  );
 
   const info = await App.getInfo().catch(() => ({ version: "1.0.0" }));
   const files = await loadFiles();
