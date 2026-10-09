@@ -31,12 +31,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (msg) => console.log(`[captura] ${msg}`);
 const failures = [];
 // Uma tela ou GIF que falha não impede os outros; o script termina com erro no fim.
-async function attempt(name, fn) {
-  try {
-    await fn();
-  } catch (err) {
-    failures.push(name);
-    log(`FALHOU ${name}: ${err.message.split("\n")[0]}`);
+// Os GIFs dependem de várias respostas das fontes de dados, então tentam de novo.
+async function attempt(name, fn, { retries = 0 } = {}) {
+  for (let i = 0; ; i++) {
+    try {
+      await fn();
+      return;
+    } catch (err) {
+      const msg = err.message.split("\n")[0];
+      if (i < retries) {
+        log(`${name}: tentando de novo (${msg})`);
+        await sleep(5000);
+        continue;
+      }
+      failures.push(name);
+      log(`FALHOU ${name}: ${msg}`);
+      return;
+    }
   }
 }
 
@@ -237,11 +248,14 @@ async function record(win, name, scene, { hold = 1400, width, speed = 1 } = {}) 
   await cdp.send("Page.startScreencast", { format: "jpeg", quality: 92, maxWidth: MOTION.width, maxHeight: MOTION.height });
   await sleep(400);
   const started = Date.now();
-  await scene();
-  await sleep(hold);
+  try {
+    await scene();
+    await sleep(hold);
+  } finally {
+    await cdp.send("Page.stopScreencast").catch(() => undefined);
+    await cdp.detach().catch(() => undefined);
+  }
   const elapsed = (Date.now() - started) / 1000;
-  await cdp.send("Page.stopScreencast");
-  await cdp.detach().catch(() => undefined);
   if (frames.length < 2) throw new Error(`GIF ${name}: nenhum quadro gravado`);
 
   const dir = path.join(tmp, `gif-${name}`);
@@ -699,7 +713,11 @@ await attempt("mercado.gif", async () => {
     await sleep(700);
     await cursor.click(win.locator("main").getByText("PETR4", { exact: true }).first());
     await settle(win, { extra: 900 });
-    const box = await win.locator("main canvas").first().boundingBox();
+    const chart = win.locator("main canvas").first();
+    const box = await chart
+      .waitFor({ state: "visible", timeout: 8000 })
+      .then(() => chart.boundingBox())
+      .catch(() => null);
     if (box) {
       await cursor.moveTo(box.x + box.width * 0.15, box.y + box.height * 0.55);
       await cursor.moveTo(box.x + box.width * 0.85, box.y + box.height * 0.45, 1300);
@@ -711,7 +729,7 @@ await attempt("mercado.gif", async () => {
     await cursor.click(win.locator("main button:has(svg.lucide-chart-candlestick)"));
     await sleep(1000);
   }, { speed: 1.15 });
-});
+}, { retries: 1 });
 
 // Aula: o quiz da sétima aula da trilha até a aprovação. A aula ocupa só o
 // centro da tela, então a janela fica menor neste GIF.

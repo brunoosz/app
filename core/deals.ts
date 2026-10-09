@@ -9,6 +9,9 @@ import { cached, fetchWithTimeout, getJson } from "./http";
 import { getQuotes } from "./yahoo";
 
 const CHEAPSHARK = "https://www.cheapshark.com/api/1.0";
+// A CheapShark recusa (HTTP 400) User-Agent de navegador ou genérico: pede um
+// que identifique o app.
+const CHEAPSHARK_INIT: RequestInit = { headers: { "User-Agent": "Investa/1.0 (+https://github.com/brunoosz/app)" } };
 
 interface SteamDetails {
   name: string;
@@ -38,7 +41,7 @@ async function steamSearch(term: string): Promise<{ id: string; name: string } |
 
 async function cheapsharkStores(): Promise<Record<string, string>> {
   return cached("cheapshark:stores", 7 * 86_400_000, async () => {
-    const list = await getJson<{ storeID: string; storeName: string }[]>(`${CHEAPSHARK}/stores`, {}, 15_000);
+    const list = await getJson<{ storeID: string; storeName: string }[]>(`${CHEAPSHARK}/stores`, CHEAPSHARK_INIT, 15_000);
     return Object.fromEntries(list.map((s) => [s.storeID, s.storeName]));
   });
 }
@@ -51,10 +54,10 @@ interface CheapGame {
 
 async function cheapsharkGame(opts: { steamAppId?: string; title?: string }): Promise<CheapGame | null> {
   const q = opts.steamAppId ? `steamAppID=${opts.steamAppId}` : `title=${encodeURIComponent(opts.title ?? "")}&limit=5`;
-  const list = await getJson<{ gameID: string; external: string }[]>(`${CHEAPSHARK}/games?${q}`, {}, 15_000);
+  const list = await getJson<{ gameID: string; external: string }[]>(`${CHEAPSHARK}/games?${q}`, CHEAPSHARK_INIT, 15_000);
   const first = list[0];
   if (!first) return null;
-  return getJson<CheapGame>(`${CHEAPSHARK}/games?id=${first.gameID}`, {}, 15_000);
+  return getJson<CheapGame>(`${CHEAPSHARK}/games?id=${first.gameID}`, CHEAPSHARK_INIT, 15_000);
 }
 
 function parseNumber(v: unknown): number | undefined {

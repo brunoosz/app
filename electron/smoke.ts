@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     return `HTTP ${res.status} ${(await res.text()).slice(0, 160)}`;
   }, (r) => r);
   await step("CheapShark: histórico do jogo 1091500", async () => {
-    const res = await fetchWithTimeout("https://www.cheapshark.com/api/1.0/games?steamAppID=1091500", {}, 15_000);
+    const res = await fetchWithTimeout("https://www.cheapshark.com/api/1.0/games?steamAppID=1091500", { headers: { "User-Agent": "Investa/1.0 (+https://github.com/brunoosz/app)" } }, 15_000);
     return `HTTP ${res.status} ${res.headers.get("server") ?? ""} ${(await res.text()).slice(0, 160)}`;
   }, (r) => r);
 
