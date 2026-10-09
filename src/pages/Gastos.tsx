@@ -256,7 +256,7 @@ export function Gastos() {
         <Button size="icon" variant="secondary" onClick={() => setYm(addMonthsYm(ym, -1))} aria-label="Mês anterior">
           <ChevronLeft size={18} />
         </Button>
-        <div className="min-w-[180px] text-center font-semibold text-[17px] capitalize">{ymLabel(ym)}</div>
+        <div className="min-w-[180px] text-center font-semibold text-[17px] first-letter:uppercase">{ymLabel(ym)}</div>
         <Button size="icon" variant="secondary" onClick={() => setYm(addMonthsYm(ym, 1))} aria-label="Próximo mês">
           <ChevronRight size={18} />
         </Button>
@@ -313,7 +313,7 @@ export function Gastos() {
           <Card padded={false} className="lg:col-span-2 overflow-hidden">
             {grouped.map(([day, list]) => (
               <div key={day}>
-                <div className="px-5 pt-4 pb-1 text-[12.5px] font-semibold text-muted capitalize">{day}</div>
+                <div className="px-5 pt-4 pb-1 text-[12.5px] font-semibold text-muted first-letter:uppercase">{day}</div>
                 <div className="divide-y divide-line/[0.06]">
                   {list.map((entry) => (
                     <EntryRow key={`${entry.expense.id}-${entry.installment}`} entry={entry} onClick={() => setSheet({ open: true, item: entry.expense })} />
@@ -348,7 +348,7 @@ export function Gastos() {
                 <div className="space-y-2">
                   {summary.futureInstallments.map((f) => (
                     <div key={f.ym} className="flex justify-between text-[14px]">
-                      <span className="capitalize text-muted">{ymLabel(f.ym)}</span>
+                      <span className="inline-block first-letter:uppercase text-muted">{ymLabel(f.ym)}</span>
                       <span className="font-semibold tabular">{brl(f.total)}</span>
                     </div>
                   ))}

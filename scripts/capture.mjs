@@ -519,14 +519,6 @@ await still("mercado-claro", "mercado", {
   wait: 2000,
 });
 
-// Capa e galeria
-const COVER = { outWidth: 2000, pad: [36, 56, 76, 56], shadow: true, radius: 10 };
-if (stills.inicio) await framed(app, stills.inicio, path.join(OUT, "capa-escuro.png"), "dark", COVER);
-if (stills["inicio-claro"]) await framed(app, stills["inicio-claro"], path.join(OUT, "capa-claro.png"), "light", COVER);
-for (const name of ["carteira", "mercado", "ativo", "aulas", "objetivos", "objetivo-projecao", "gastos", "bancos", "alertas", "simulador", "mercado-claro"]) {
-  if (stills[name]) await framed(app, stills[name], path.join(OUT, `${name}.png`), name.endsWith("-claro") ? "light" : "dark", { outWidth: 1600 });
-}
-
 // Volta ao tema escuro e desliga os avisos automáticos, para nenhum toast
 // aparecer no meio dos GIFs.
 await setData(win, { settings: { ...demo.settings, theme: "dark", smartAlerts: false, marketEvents: false, dailyTip: false } });
@@ -535,6 +527,16 @@ await app.close();
 
 // 2. GIFs em 1x
 ({ app, win } = await launch(MOTION));
+
+// Capa e galeria. A montagem fica nesta etapa porque, em 2x, a janela fora da
+// tela é limitada ao tamanho da tela virtual e cortaria a imagem.
+const COVER = { outWidth: 2000, pad: [36, 56, 76, 56], shadow: true, radius: 10 };
+if (stills.inicio) await framed(app, stills.inicio, path.join(OUT, "capa-escuro.png"), "dark", COVER);
+if (stills["inicio-claro"]) await framed(app, stills["inicio-claro"], path.join(OUT, "capa-claro.png"), "light", COVER);
+for (const name of ["carteira", "mercado", "ativo", "aulas", "objetivos", "objetivo-projecao", "gastos", "bancos", "alertas", "simulador", "mercado-claro"]) {
+  if (stills[name]) await framed(app, stills[name], path.join(OUT, `${name}.png`), name.endsWith("-claro") ? "light" : "dark", { outWidth: 1600 });
+}
+
 await win.locator("aside").first().waitFor({ state: "visible", timeout: 40_000 });
 await sleep(1500);
 await invoke(win, "notifications:markRead", {});
