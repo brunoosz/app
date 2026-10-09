@@ -138,7 +138,7 @@ await go("gastos", "gastos", 1500);
 // Saldo de conta e entrada extra ("Recebi dinheiro") somando ao saldo.
 {
   const dialog = win.getByRole("dialog");
-  await win.getByRole("button", { name: "Adicionar conta" }).click();
+  await win.getByRole("button", { name: "Adicionar conta", exact: true }).click();
   await wait(400);
   await dialog.locator("select").first().selectOption("nubank");
   await dialog.locator('input[inputmode="decimal"]').first().fill("2000");
@@ -154,6 +154,20 @@ await go("gastos", "gastos", 1500);
   console.log(`[gastos-contas] saldo somado: ${ok ? "sim" : "NÃO"}`);
   if (!ok) pageErrors.push("Saldo da conta não somou a entrada extra");
   await shot("gastos-contas");
+  // Conta fixa: cadastrar e marcar como paga.
+  await win.getByRole("button", { name: "Adicionar conta fixa", exact: true }).click();
+  await wait(400);
+  await dialog.getByPlaceholder("Ex.: Internet").fill("Internet");
+  await dialog.locator('input[inputmode="decimal"]').first().fill("120");
+  await dialog.getByPlaceholder("Ex.: 10").fill("15");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await wait(600);
+  await win.getByRole("button", { name: "Paguei" }).first().click();
+  await wait(800);
+  const billOk = (await win.locator("main").innerText()).includes("Todas pagas");
+  console.log(`[gastos-conta-fixa] paga: ${billOk ? "sim" : "NÃO"}`);
+  if (!billOk) pageErrors.push("Conta fixa não ficou paga");
+  await shot("gastos-conta-fixa");
 }
 await go("bancos", "bancos", 8000);
 await win.getByRole("button", { name: "Juros de crédito", exact: true }).click();

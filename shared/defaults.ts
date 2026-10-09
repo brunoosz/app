@@ -44,5 +44,6 @@ export function defaultUserData(): UserDataMap {
     chat: [],
     invoices: [],
     accounts: [],
+    bills: [],
   };
 }

@@ -2,7 +2,7 @@
 // o app do celular criam este backend com o adaptador da sua plataforma.
 import type { AiChatRequest, AiMode, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { USER_DATA_KEYS } from "@shared/types";
-import { currentYm, monthBudget, summarizeMonth } from "@shared/finance";
+import { billsPending, currentYm, monthBudget, summarizeMonth } from "@shared/finance";
 import { modeInfo } from "@shared/ai";
 import type { Platform } from "./platform";
 import { Store } from "./store";
@@ -238,7 +238,7 @@ export class Backend {
     const profile = this.store.getData(userId, "profile");
     const ym = currentYm();
     const month = summarizeMonth(this.store.getData(userId, "expenses"), ym, profile.salary, profile.extraIncome);
-    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym);
+    const budget = monthBudget(month, this.store.getData(userId, "invoices"), ym, new Date(), billsPending(this.store.getData(userId, "bills"), ym));
     const invoicesOpen = budget.invoicesOpen;
     const accounts = this.store.getData(userId, "accounts");
     return {
@@ -372,11 +372,11 @@ export class Backend {
     this.on("data:getAll", () => this.store.getAllData(this.uid()));
     this.on("data:set", (a: { key: UserDataKey; value: UserDataMap[UserDataKey] }) => {
       if (!USER_DATA_KEYS.includes(a.key)) throw new AppError("INVALID", "Dado inválido.");
-      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts"].includes(a.key);
+      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts", "bills"].includes(a.key);
       if (isArray !== Array.isArray(a.value) || a.value === null || typeof a.value !== "object") throw new AppError("INVALID", "Formato inválido.");
       this.store.setData(this.uid(), a.key, a.value);
       this.cloud.schedulePush(this.uid());
-      if (a.key === "alerts" || a.key === "portfolio" || a.key === "settings" || a.key === "invoices") this.engine.runNow();
+      if (a.key === "alerts" || a.key === "portfolio" || a.key === "settings" || a.key === "invoices" || a.key === "bills") this.engine.runNow();
       return true;
     });
 

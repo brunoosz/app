@@ -1,7 +1,7 @@
 import type { AppNotification, Holding, PriceAlert, Quote, UserSettings } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
 import { DAILY_TIPS } from "@shared/tips";
-import { ymLabel } from "@shared/finance";
+import { billDueDate, ymLabel } from "@shared/finance";
 import type { Store } from "./store";
 import { getQuotes } from "./yahoo";
 import { getCopom, getIndicators } from "./bcb";
@@ -98,6 +98,7 @@ export class AlertEngine {
 
       this.reminders(uid, alerts);
       this.invoices(uid);
+      this.bills(uid);
 
       const variable = portfolio.filter((h) => h.kind === "variavel" && h.symbol);
       const symbols = [
@@ -120,6 +121,25 @@ export class AlertEngine {
   }
 
   /** Avisa uma vez por mês quando as faturas em aberto passam da renda. */
+  /** Contas fixas: aviso 3 dias antes, no dia e quando atrasa. */
+  private bills(userId: string): void {
+    const today = todayIsoSaoPaulo();
+    const ym = today.slice(0, 7);
+    for (const b of this.store.getData(userId, "bills")) {
+      if (!b.active || b.paid.includes(ym)) continue;
+      const due = billDueDate(b, ym);
+      const days = Math.round((Date.parse(`${due}T12:00:00`) - Date.parse(`${today}T12:00:00`)) / 86_400_000);
+      const value = brl(b.amount);
+      if (days === 3 || days === 2) {
+        this.push(userId, { type: "carteira", tone: "info", title: `${b.name} vence em ${days} dias`, message: `${value} no dia ${Number(due.slice(8))}. Quando pagar, toque em "Paguei" em Gastos.`, link: "/gastos" }, `conta-${b.id}-${ym}-antes`);
+      } else if (days === 0) {
+        this.push(userId, { type: "carteira", tone: "info", title: `${b.name} vence hoje`, message: `${value}. Já pagou? Marque em Gastos para o disponível do mês ficar certo.`, link: "/gastos" }, `conta-${b.id}-${ym}-hoje`);
+      } else if (days < 0 && days >= -5) {
+        this.push(userId, { type: "carteira", tone: "negative", title: `${b.name} está atrasada`, message: `${value} venceu no dia ${Number(due.slice(8))}. Pagar logo evita multa e juros.`, link: "/gastos" }, `conta-${b.id}-${ym}-atrasada`);
+      }
+    }
+  }
+
   private invoices(userId: string): void {
     const ym = todayIsoSaoPaulo().slice(0, 7);
     const profile = this.store.getData(userId, "profile");

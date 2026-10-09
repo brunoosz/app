@@ -254,6 +254,21 @@ export interface UserDataMap {
   chat: ChatMessage[];
   invoices: Invoice[];
   accounts: BankAccount[];
+  bills: Bill[];
+}
+
+/** Conta que se repete todo mês (aluguel, internet, assinatura). */
+export interface Bill {
+  id: string;
+  name: string;
+  amount: number;
+  /** Dia do vencimento (1 a 31; em meses mais curtos vale o último dia). */
+  dueDay: number;
+  category: string;
+  institution?: string;
+  /** Meses (AAAA-MM) já pagos. */
+  paid: string[];
+  active: boolean;
 }
 
 /** Saldo de uma conta (corrente, poupança ou carteira digital), informado pela pessoa. */
@@ -279,6 +294,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "chat",
   "invoices",
   "accounts",
+  "bills",
 ];
 
 export interface Quote {

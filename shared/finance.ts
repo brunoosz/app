@@ -1,4 +1,4 @@
-import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, RateType } from "./types";
+import type { AllocationType, Expense, FixedType, Goal, GoalAllocation, Indicators, Invoice, Bill, RateType } from "./types";
 
 export interface Rates {
   cdi: number;
@@ -263,6 +263,8 @@ export interface MonthBudget {
   /** Soma das faturas do mês (pagas e em aberto). */
   invoices: number;
   invoicesOpen: number;
+  /** Contas fixas do mês ainda não pagas. */
+  pendingBills: number;
   committed: number;
   available: number;
   /** Fração da renda já comprometida (0 a 1+). */
@@ -277,7 +279,19 @@ export interface MonthBudget {
  * crédito de um banco com fatura informada entram pela fatura (não somam duas
  * vezes); as dos outros bancos entram pelo lançamento.
  */
-export function monthBudget(summary: MonthSummary, invoices: Invoice[], ym: string, today = new Date()): MonthBudget {
+/** Dia do vencimento de uma conta fixa num mês (31 em fevereiro vira 28/29). */
+export function billDueDate(bill: Bill, ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return `${ym}-${String(Math.min(bill.dueDay, last)).padStart(2, "0")}`;
+}
+
+/** Soma das contas fixas ativas ainda não pagas no mês. */
+export function billsPending(bills: Bill[], ym: string): number {
+  return round2(bills.filter((b) => b.active && !b.paid.includes(ym)).reduce((s, b) => s + b.amount, 0));
+}
+
+export function monthBudget(summary: MonthSummary, invoices: Invoice[], ym: string, today = new Date(), pendingBills = 0): MonthBudget {
   const monthInvoices = invoices.filter((i) => i.ym === ym);
   const withInvoice = new Set(monthInvoices.map((i) => i.institution));
   const spentDirect = round2(
@@ -288,9 +302,10 @@ export function monthBudget(summary: MonthSummary, invoices: Invoice[], ym: stri
   const invoiceTotal = round2(monthInvoices.reduce((s, i) => s + i.amount, 0));
   const invoicesOpen = round2(monthInvoices.filter((i) => !i.paid).reduce((s, i) => s + i.amount, 0));
   const income = round2(summary.income + summary.extraIncome);
-  const committed = round2(spentDirect + invoiceTotal);
+  // Contas fixas ainda não pagas já estão comprometidas (as pagas viram lançamento).
+  const committed = round2(spentDirect + invoiceTotal + pendingBills);
   const available = round2(income - committed);
-  const out: MonthBudget = { income, spentDirect, invoices: invoiceTotal, invoicesOpen, committed, available, ratio: income > 0 ? committed / income : committed > 0 ? 1 : 0 };
+  const out: MonthBudget = { income, spentDirect, invoices: invoiceTotal, invoicesOpen, pendingBills: round2(pendingBills), committed, available, ratio: income > 0 ? committed / income : committed > 0 ? 1 : 0 };
   const cur = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   if (ym === cur) {
     const last = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
