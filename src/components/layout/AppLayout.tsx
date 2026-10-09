@@ -22,11 +22,19 @@ function NotificationsPopover({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    // Toque fora fecha; o próprio sino é ignorado aqui porque ele já alterna (abre/fecha).
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element;
+      if (target.closest?.("[data-notifications-toggle]")) return;
+      if (ref.current && !ref.current.contains(target)) onClose();
     };
-    setTimeout(() => window.addEventListener("mousedown", onDown), 0);
-    return () => window.removeEventListener("mousedown", onDown);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    setTimeout(() => window.addEventListener("pointerdown", onDown), 0);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [onClose]);
   const open = (n: AppNotification) => {
     void api.notifications.markRead(n.id).then(setNotifications);
@@ -100,7 +108,9 @@ function TitleBar({ onSearch }: { onSearch: () => void }) {
       </button>
       <div className="relative no-drag">
         <button
+          data-notifications-toggle
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
           className="relative h-9 w-9 rounded-xl flex items-center justify-center text-muted hover:text-fg hover:bg-line/10 transition"
           aria-label="Notificações"
         >

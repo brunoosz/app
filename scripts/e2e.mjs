@@ -164,8 +164,46 @@ await go("configuracoes", "configuracoes", 1500);
 
 const notifications = await win.evaluate(() => document.querySelector('[aria-label="Notificações"]')?.textContent ?? "");
 console.log(`[notificacoes-nao-lidas] ${notifications || "0"}`);
+
+// Celular e tablet: nenhuma tela pode ter texto saindo do card nem rolagem para o lado.
+const layoutIssues = [];
+const ROUTES = ["", "carteira", "mercado", "mercado/PETR4.SA", "aulas", "assistente", "simulador", "vale-a-pena", "objetivos", "gastos", "bancos", "alertas", "usuarios", "configuracoes"];
+for (const [label, width, height] of [["celular", 380, 800], ["tablet", 768, 1024]]) {
+  await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0].setContentSize(s.w, s.h), { w: width, h: height });
+  await wait(600);
+  for (const r of ROUTES) {
+    await win.evaluate((route) => (location.hash = `#/${route}`), r);
+    await wait(r.startsWith("mercado") ? 3500 : 1800);
+    const found = await win.evaluate(() => {
+      const out = [];
+      if (document.documentElement.scrollWidth > innerWidth + 1) out.push(`página rola para o lado (${document.documentElement.scrollWidth}px > ${innerWidth}px)`);
+      for (const card of document.querySelectorAll("main .surface")) {
+        const box = card.getBoundingClientRect();
+        if (!box.width) continue;
+        for (const el of card.querySelectorAll("*")) {
+          if (el.children.length || !el.textContent.trim()) continue;
+          const r = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          // Só conta como cortado de propósito se algum pai dentro do card esconde o excesso.
+          let clipped = false;
+          for (let a = el; a && a !== card; a = a.parentElement) {
+            const cs = getComputedStyle(a);
+            if (cs.overflowX !== "visible" || cs.textOverflow === "ellipsis") clipped = true;
+          }
+          if (r.width && (r.right > box.right + 2 || r.left < box.left - 2) && !clipped && style.position !== "absolute") {
+            out.push(`"${el.textContent.trim().slice(0, 40)}" sai do card`);
+          }
+        }
+      }
+      return [...new Set(out)].slice(0, 8);
+    });
+    for (const f of found) layoutIssues.push(`[${label}] /${r}: ${f}`);
+    if (r === "" || r === "gastos" || r === "simulador" || r === "carteira") await win.screenshot({ path: path.join(shots, `${label}-${r || "inicio"}.png`) });
+  }
+}
+console.log(`\nProblemas de layout (${layoutIssues.length}):\n${layoutIssues.join("\n")}`);
 console.log(`\nErros no console (${consoleErrors.length}):\n${consoleErrors.slice(0, 20).join("\n")}`);
 console.log(`Exceções na página (${pageErrors.length}):\n${pageErrors.join("\n")}`);
 await app.close();
 fs.rmSync(dataDir, { recursive: true, force: true });
-process.exit(pageErrors.length ? 1 : 0);
+process.exit(pageErrors.length || layoutIssues.length ? 1 : 0);

@@ -255,3 +255,11 @@ html.native-app nav.sm\:hidden {
   padding-bottom: env(safe-area-inset-bottom);
   height: calc(64px + env(safe-area-inset-bottom));
 }
+
+/* Opções das listas suspensas legíveis no tema escuro (no Windows a lista
+   abria com fundo claro e texto claro). */
+select option,
+select optgroup {
+  background-color: rgb(var(--surface));
+  color: rgb(var(--fg));
+}

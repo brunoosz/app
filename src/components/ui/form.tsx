@@ -178,7 +178,7 @@ export function SegmentedControl<T extends string>({
 }) {
   const id = useId();
   return (
-    <div className={clsx("no-drag relative inline-flex p-1 rounded-xl bg-line/[0.08] border border-line/10", block && "w-full", className)}>
+    <div className={clsx("no-drag relative inline-flex max-w-full overflow-x-auto no-scrollbar p-1 rounded-xl bg-line/[0.08] border border-line/10 [&>button]:shrink-0", block && "w-full", className)}>
       {options.map((o) => {
         const active = o.value === value;
         const Icon = o.icon;

@@ -33,7 +33,7 @@ const splash = path.join(tmp, "splash.png");
 // Ícone completo (quadrado arredondado), igual ao do desktop.
 await render(brand.appIconSvg(1024), full, 1024);
 // Primeiro plano do ícone adaptativo: só as barras, dentro da área segura (66%).
-await render(`<div style="width:1024px;height:1024px;display:flex;align-items:center;justify-content:center">${brand.logoMarkSvg(430, "fg")}</div>`, fg, 1024);
+await render(`<div style="width:1024px;height:1024px;display:flex;align-items:center;justify-content:center">${brand.logoMarkSvg(600, "fg")}</div>`, fg, 1024);
 // Ícone da notificação: silhueta branca.
 await render(`<div style="width:256px;height:256px;display:flex;align-items:center;justify-content:center">${brand.logoMarkSvg(200, "mono", "#FFFFFF")}</div>`, mono, 256);
 // Tela de abertura: logo no fundo da marca.

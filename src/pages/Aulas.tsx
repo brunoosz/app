@@ -48,7 +48,7 @@ function Trail() {
                 <span className="text-[12px] font-bold">{Math.round(progress * 100)}%</span>
               </ProgressRing>
             </div>
-            <div className="flex flex-col items-center py-6 gap-5">
+            <div className="flex flex-col items-center py-6 gap-5 [--zig:0.35] sm:[--zig:1]">
               {m.lessons.map((l) => {
                 const offset = OFFSETS[globalIndex++ % OFFSETS.length];
                 const done = isApproved(learning, l.id);
@@ -56,7 +56,7 @@ function Trail() {
                 const current = next?.lesson.id === l.id;
                 const rec = learning.completed[l.id];
                 return (
-                  <div key={l.id} className="flex flex-col items-center" style={{ transform: `translateX(${offset}px)` }}>
+                  <div key={l.id} className="flex flex-col items-center" style={{ transform: `translateX(calc(var(--zig) * ${offset}px))` }}>
                     <motion.button
                       whileHover={open ? { scale: 1.06 } : undefined}
                       whileTap={open ? { scale: 0.94 } : undefined}

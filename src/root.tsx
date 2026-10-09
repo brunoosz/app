@@ -5,6 +5,7 @@ import "@fontsource-variable/inter";
 import "./index.css";
 import { initialTheme } from "@/store/ui";
 import App from "./App";
+import { installAutoFit } from "@/lib/autofit";
 
 export function renderApp(): void {
   initialTheme();
@@ -15,4 +16,5 @@ export function renderApp(): void {
       </HashRouter>
     </React.StrictMode>
   );
+  installAutoFit();
 }
