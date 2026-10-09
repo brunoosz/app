@@ -314,6 +314,8 @@ export interface ChartData {
   currency: string;
   previousClose?: number;
   intraday: boolean;
+  /** No 1D, quando o pregão do dia ainda não tem pontos: mostra o último pregão. */
+  lastSession?: boolean;
   points: ChartPoint[];
 }
 

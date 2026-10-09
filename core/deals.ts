@@ -198,10 +198,14 @@ export async function checkDeal(input: DealInput, budget: DealCheck["budget"]): 
             note: "Menor preço já registrado nas lojas de PC dos EUA (CheapShark). No Brasil a Steam usa preço regional, normalmente menor que a conversão do dólar.",
           };
         }
+        const hasSteamBr = offers.some((o) => o.store === "Steam");
         for (const deal of game.deals.slice(0, 6)) {
+          const store = stores[deal.storeID] ?? `Loja ${deal.storeID}`;
+          // A Steam já aparece com o preço regional em reais.
+          if (hasSteamBr && store === "Steam") continue;
           const price = Number(deal.price);
           offers.push({
-            store: stores[deal.storeID] ?? `Loja ${deal.storeID}`,
+            store,
             price,
             currency: "USD",
             priceBrl: toBrl(price),

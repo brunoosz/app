@@ -100,7 +100,7 @@ export function Ativo() {
 
   const pts = useMemo(() => {
     const p = chart.data?.points ?? [];
-    if (!q || !p.length || range !== "1D") return p;
+    if (!q || !p.length || range !== "1D" || chart.data?.lastSession) return p;
     const last = p[p.length - 1];
     return last.close === q.price ? p : [...p.slice(0, -1), { ...last, close: q.price, high: Math.max(last.high, q.price), low: Math.min(last.low, q.price) }];
   }, [chart.data, q, range]);
@@ -187,7 +187,9 @@ export function Ativo() {
                       ? `${dateBR(hover.time * 1000, { day: "2-digit", month: "short" })} ${timeBR(hover.time * 1000)}`
                       : dateBR(hover.time * 1000, { day: "2-digit", month: "short", year: "numeric" })
                     : range === "1D"
-                      ? "hoje"
+                      ? chart.data?.lastSession
+                        ? "no último pregão"
+                        : "hoje"
                       : `em ${RANGES.find((r) => r.value === range)?.label}`}
                 </span>
                 {fx && shownPrice !== undefined && !hover && <span className="text-muted">≈ {brl(shownPrice * fx)}</span>}

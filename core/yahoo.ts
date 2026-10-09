@@ -183,37 +183,61 @@ const RANGES: Record<ChartRange, { range: string; interval: string; ttl: number 
   MAX: { range: "max", interval: "1mo", ttl: 12 * 3600_000 },
 };
 
+function chartPoints(r: any): ChartPoint[] {
+  const ts: number[] = r.timestamp ?? [];
+  const q = r.indicators?.quote?.[0] ?? {};
+  const byTime = new Map<number, ChartPoint>();
+  for (let i = 0; i < ts.length; i++) {
+    const close = q.close?.[i];
+    if (close == null || !Number.isFinite(close)) continue;
+    byTime.set(ts[i], {
+      time: ts[i],
+      open: q.open?.[i] ?? close,
+      high: q.high?.[i] ?? close,
+      low: q.low?.[i] ?? close,
+      close,
+      volume: q.volume?.[i] ?? undefined,
+    });
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
+async function chartResult(symbol: string, range: string, interval: string): Promise<any> {
+  const json: any = await getJson(`${Q1}/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includePrePost=false`);
+  const r = json?.chart?.result?.[0];
+  if (!r) throw new Error(json?.chart?.error?.description || "Sem dados de gráfico");
+  return r;
+}
+
 export async function getChart(symbol: string, range: ChartRange): Promise<ChartData> {
   const cfg = RANGES[range] ?? RANGES["1M"];
   return cached(`chart:${symbol}:${range}`, cfg.ttl, async () => {
-    const url = `${Q1}/v8/finance/chart/${encodeURIComponent(symbol)}?range=${cfg.range}&interval=${cfg.interval}&includePrePost=false`;
-    const json: any = await getJson(url);
-    const r = json?.chart?.result?.[0];
-    if (!r) throw new Error(json?.chart?.error?.description || "Sem dados de gráfico");
-    const ts: number[] = r.timestamp ?? [];
-    const q = r.indicators?.quote?.[0] ?? {};
-    const byTime = new Map<number, ChartPoint>();
-    for (let i = 0; i < ts.length; i++) {
-      const close = q.close?.[i];
-      if (close == null || !Number.isFinite(close)) continue;
-      byTime.set(ts[i], {
-        time: ts[i],
-        open: q.open?.[i] ?? close,
-        high: q.high?.[i] ?? close,
-        low: q.low?.[i] ?? close,
-        close,
-        volume: q.volume?.[i] ?? undefined,
-      });
-    }
-    const points = [...byTime.values()].sort((a, b) => a.time - b.time);
-    return {
+    const r = await chartResult(symbol, cfg.range, cfg.interval);
+    const data: ChartData = {
       symbol,
       range,
       currency: r.meta?.currency ?? "BRL",
       previousClose: num(r.meta?.chartPreviousClose) ?? num(r.meta?.previousClose),
       intraday: range === "1D" || range === "5D" || range === "1M",
-      points,
+      points: chartPoints(r),
     };
+    // Logo depois da abertura (e com o atraso de 15 min da B3) o pregão do dia
+    // ainda não tem pontos: mostra o último pregão completo.
+    if (range === "1D" && data.points.length < 2) {
+      const week = await chartResult(symbol, "5d", cfg.interval).catch(() => null);
+      const offset = num(week?.meta?.gmtoffset) ?? 0;
+      const day = (t: number) => Math.floor((t + offset) / 86_400);
+      const all = week ? chartPoints(week) : [];
+      const last = all.length ? day(all[all.length - 1].time) : undefined;
+      const session = all.filter((p) => day(p.time) === last);
+      if (session.length >= 2) {
+        const before = all.filter((p) => day(p.time) < last!);
+        data.points = session;
+        data.previousClose = before[before.length - 1]?.close ?? data.previousClose;
+        data.lastSession = true;
+      }
+    }
+    return data;
   });
 }
 
