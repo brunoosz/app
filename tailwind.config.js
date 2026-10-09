@@ -1,35 +1,51 @@
 /** @type {import('tailwindcss').Config} */
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
-  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        emerald: {
-          50: "#ecfdf5",
-          100: "#d1fae5",
-          200: "#a7f3d0",
-          300: "#6ee7b7",
-          400: "#34d399",
-          500: "#10b981",
-          600: "#059669",
-          700: "#047857",
-          800: "#065f46",
-          900: "#064e3b",
-          950: "#022c22",
+        bg: token("bg"),
+        surface: token("surface"),
+        elevated: token("elevated"),
+        line: token("line"),
+        fg: token("fg"),
+        muted: token("muted"),
+        primary: token("primary"),
+        secondary: token("secondary"),
+        success: token("success"),
+        danger: token("danger"),
+        warning: token("warning"),
+      },
+      fontFamily: {
+        sans: ['"Inter Variable"', "Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+      },
+      borderRadius: {
+        "4xl": "2rem",
+      },
+      boxShadow: {
+        soft: "0 1px 2px rgb(0 0 0 / 0.04), 0 10px 30px -12px rgb(0 0 0 / 0.25)",
+        glow: "0 10px 30px -8px rgb(79 140 255 / 0.55)",
+        ring: "0 0 0 4px rgb(79 140 255 / 0.18)",
+      },
+      backgroundImage: {
+        brand: "linear-gradient(135deg, #4F8CFF 0%, #7C8CFB 55%, #A78BFA 100%)",
+      },
+      keyframes: {
+        shimmer: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(100%)" },
         },
-        navy: {
-          50: "#f0f4ff",
-          100: "#dbe4ff",
-          200: "#bac8ff",
-          300: "#91a7ff",
-          400: "#748ffc",
-          500: "#5c7cfa",
-          600: "#4c6ef5",
-          700: "#4263eb",
-          800: "#3b5bdb",
-          900: "#364fc7",
-          950: "#0b1929",
+        pulseDot: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.35" },
         },
+      },
+      animation: {
+        shimmer: "shimmer 1.6s infinite",
+        "pulse-dot": "pulseDot 1.6s ease-in-out infinite",
       },
     },
   },

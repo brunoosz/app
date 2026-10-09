@@ -14,7 +14,6 @@
 /out/
 
 # production
-/build
 /dist
 /release
 
@@ -36,3 +35,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# electron
+/dist-electron
+.env
+
+# chave da IA (nunca versionar)
+config.json
+investa.config.json
+
+# testes
+/e2e-shots

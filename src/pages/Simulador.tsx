@@ -1,291 +1,243 @@
-import { useState } from "react";
-import { stocks, formatCurrency, formatPercent } from "@/data/market";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Gamepad2, History, RotateCcw } from "lucide-react";
+import clsx from "clsx";
+import type { SimPosition, SimTrade } from "@shared/types";
+import { catalogAsset, displaySymbol } from "@shared/catalog";
+import { SIMULATOR_START_CASH } from "@shared/defaults";
+import { uid } from "@/lib/api";
+import { brl, dateBR, money, num, pct, timeBR, toneClass } from "@/lib/format";
+import { fx } from "@/lib/portfolio";
+import { refreshQuotes, useMarket, useQuotes } from "@/store/market";
+import { useSession, useUserData } from "@/store/session";
+import { useUi } from "@/store/ui";
+import { AnimatedNumber, Badge, Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/Button";
+import { Field, NumberInput, SegmentedControl } from "@/components/ui/form";
+import { ConfirmDialog } from "@/components/ui/Sheet";
+import { AssetAvatar, AssetPicker, ChangePill } from "@/components/market";
 
-interface Position {
-  ticker: string;
-  name: string;
-  shares: number;
-  avgPrice: number;
-}
+export function Simulador() {
+  const sim = useUserData("simulator");
+  const update = useSession((s) => s.update);
+  const toast = useUi((s) => s.toast);
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [symbol, setSymbol] = useState<string | undefined>(params.get("ativo") ?? undefined);
+  const [side, setSide] = useState<"compra" | "venda">("compra");
+  const [qty, setQty] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
-interface Transaction {
-  type: "compra" | "venda";
-  ticker: string;
-  shares: number;
-  price: number;
-  total: number;
-  date: string;
-}
+  const symbols = useMemo(() => [...sim.positions.map((p) => p.symbol), symbol, "USDBRL=X", "EURBRL=X"], [sim.positions, symbol]);
+  const quotes = useQuotes(symbols);
+  const q = symbol ? quotes[symbol] : undefined;
+  const rate = q ? fx(q.currency, quotes) || 1 : 1;
+  const position = sim.positions.find((p) => p.symbol === symbol);
+  const total = q ? q.price * qty * rate : 0;
 
-const INITIAL_BALANCE = 100000;
+  useEffect(() => {
+    if (symbol && catalogAsset(symbol)?.category === "cripto") setQty(0.01);
+  }, [symbol]);
 
-export default function Simulador() {
-  const [balance, setBalance] = useState(INITIAL_BALANCE);
-  const [portfolio, setPortfolio] = useState<Position[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [selectedTicker, setSelectedTicker] = useState(stocks[0].ticker);
-  const [shares, setShares] = useState(1);
-  const [tab, setTab] = useState<"negociar" | "carteira" | "historico">("negociar");
-
-  const selectedStock = stocks.find((s) => s.ticker === selectedTicker)!;
-
-  function buy() {
-    const total = selectedStock.price * shares;
-    if (total > balance) return;
-
-    setBalance((b) => Math.round((b - total) * 100) / 100);
-
-    setPortfolio((prev) => {
-      const existing = prev.find((p) => p.ticker === selectedTicker);
-      if (existing) {
-        const newShares = existing.shares + shares;
-        const newAvg = (existing.avgPrice * existing.shares + selectedStock.price * shares) / newShares;
-        return prev.map((p) =>
-          p.ticker === selectedTicker
-            ? { ...p, shares: newShares, avgPrice: Math.round(newAvg * 100) / 100 }
-            : p
-        );
-      }
-      return [...prev, { ticker: selectedTicker, name: selectedStock.name, shares, avgPrice: selectedStock.price }];
-    });
-
-    setTransactions((prev) => [
-      {
-        type: "compra",
-        ticker: selectedTicker,
-        shares,
-        price: selectedStock.price,
-        total,
-        date: new Date().toLocaleString("pt-BR"),
-      },
-      ...prev,
-    ]);
-  }
-
-  function sell() {
-    const position = portfolio.find((p) => p.ticker === selectedTicker);
-    if (!position || position.shares < shares) return;
-
-    const total = selectedStock.price * shares;
-    setBalance((b) => Math.round((b + total) * 100) / 100);
-
-    setPortfolio((prev) => {
-      const newShares = position.shares - shares;
-      if (newShares === 0) return prev.filter((p) => p.ticker !== selectedTicker);
-      return prev.map((p) =>
-        p.ticker === selectedTicker ? { ...p, shares: newShares } : p
-      );
-    });
-
-    setTransactions((prev) => [
-      {
-        type: "venda",
-        ticker: selectedTicker,
-        shares,
-        price: selectedStock.price,
-        total,
-        date: new Date().toLocaleString("pt-BR"),
-      },
-      ...prev,
-    ]);
-  }
-
-  const portfolioValue = portfolio.reduce((acc, p) => {
-    const stock = stocks.find((s) => s.ticker === p.ticker);
-    return acc + (stock?.price || 0) * p.shares;
+  const posValue = sim.positions.reduce((s, p) => {
+    const pq = quotes[p.symbol];
+    return s + p.quantity * (pq?.price ?? p.avgPrice) * (fx(p.currency, quotes) || 1);
   }, 0);
+  const equity = sim.cash + posValue;
+  const ret = equity - SIMULATOR_START_CASH;
 
-  const totalValue = balance + portfolioValue;
-  const totalReturn = totalValue - INITIAL_BALANCE;
-  const totalReturnPercent = (totalReturn / INITIAL_BALANCE) * 100;
-
-  const currentPosition = portfolio.find((p) => p.ticker === selectedTicker);
+  const execute = async () => {
+    if (!symbol || !q || qty <= 0) return;
+    setBusy(true);
+    await refreshQuotes();
+    const fresh = useMarket.getState().quotes[symbol] ?? q;
+    const r = fx(fresh.currency, useMarket.getState().quotes) || 1;
+    const price = fresh.price;
+    const cost = price * qty * r;
+    setBusy(false);
+    if (side === "compra" && cost > sim.cash + 0.001) {
+      toast({ title: "Saldo insuficiente", message: `Você tem ${brl(sim.cash)} disponíveis.`, tone: "error" });
+      return;
+    }
+    if (side === "venda" && (!position || position.quantity < qty - 1e-9)) {
+      toast({ title: "Quantidade indisponível", message: `Você tem ${num(position?.quantity ?? 0, 4).replace(/,?0+$/, "")} de ${displaySymbol(symbol)}.`, tone: "error" });
+      return;
+    }
+    const trade: SimTrade = { id: uid(), side, symbol, quantity: qty, price, date: new Date().toISOString() };
+    update("simulator", (s) => {
+      let positions: SimPosition[] = s.positions;
+      const existing = s.positions.find((p) => p.symbol === symbol);
+      if (side === "compra") {
+        positions = existing
+          ? s.positions.map((p) => (p.symbol === symbol ? { ...p, quantity: p.quantity + qty, avgPrice: (p.avgPrice * p.quantity + price * qty) / (p.quantity + qty) } : p))
+          : [...s.positions, { symbol, name: fresh.name, quantity: qty, avgPrice: price, currency: fresh.currency }];
+      } else {
+        positions = s.positions.map((p) => (p.symbol === symbol ? { ...p, quantity: p.quantity - qty } : p)).filter((p) => p.quantity > 1e-9);
+      }
+      return { ...s, cash: side === "compra" ? s.cash - cost : s.cash + cost, positions, history: [trade, ...s.history].slice(0, 200) };
+    });
+    toast({ title: side === "compra" ? "Compra executada" : "Venda executada", message: `${num(qty, qty % 1 ? 4 : 0)} × ${displaySymbol(symbol)} a ${money(price, fresh.currency)}`, tone: "success" });
+  };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Simulador</h1>
-        <p className="opacity-60">Pratique investimentos com dinheiro virtual. Sem risco!</p>
-      </div>
+    <div>
+      <PageHeader
+        title="Simulador"
+        subtitle="Treine com R$ 100 mil virtuais usando preços reais do mercado. Sem risco nenhum."
+        actions={
+          <Button variant="secondary" icon={RotateCcw} onClick={() => setConfirmReset(true)}>
+            Reiniciar
+          </Button>
+        }
+      />
 
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="card text-center">
-          <p className="text-xs opacity-50 mb-1">Saldo disponivel</p>
-          <p className="text-2xl font-bold" style={{ color: "var(--emerald)" }}>
-            {formatCurrency(balance)}
-          </p>
-        </div>
-        <div className="card text-center">
-          <p className="text-xs opacity-50 mb-1">Em investimentos</p>
-          <p className="text-2xl font-bold">{formatCurrency(portfolioValue)}</p>
-        </div>
-        <div className="card text-center">
-          <p className="text-xs opacity-50 mb-1">Retorno total</p>
-          <p className={`text-2xl font-bold ${totalReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-            {totalReturn >= 0 ? "+" : ""}{formatCurrency(totalReturn)}
-            <span className="text-sm ml-1">({totalReturnPercent >= 0 ? "+" : ""}{totalReturnPercent.toFixed(2)}%)</span>
-          </p>
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        {(["negociar", "carteira", "historico"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer border-none capitalize"
-            style={{
-              background: tab === t ? "var(--emerald)" : "var(--navy-card)",
-              color: tab === t ? "white" : "var(--foreground)",
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {tab === "negociar" && (
-        <div className="card">
-          <h3 className="font-bold mb-4" style={{ color: "var(--emerald)" }}>Comprar / Vender</h3>
-
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs opacity-50 block mb-1">Ativo</label>
-              <select
-                value={selectedTicker}
-                onChange={(e) => setSelectedTicker(e.target.value)}
-                className="input-field"
-              >
-                {stocks.map((s) => (
-                  <option key={s.ticker} value={s.ticker}>
-                    {s.ticker} - {s.name} ({formatCurrency(s.price)})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <label className="text-xs opacity-50 block mb-1">Quantidade</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={shares}
-                  onChange={(e) => setShares(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="input-field"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs opacity-50 block mb-1">Preco unitario</label>
-                <p className="text-lg font-bold mt-1">{formatCurrency(selectedStock.price)}</p>
-              </div>
-              <div className="flex-1">
-                <label className="text-xs opacity-50 block mb-1">Total</label>
-                <p className="text-lg font-bold mt-1">{formatCurrency(selectedStock.price * shares)}</p>
-              </div>
-            </div>
-
-            {currentPosition && (
-              <p className="text-xs opacity-50">
-                Voce tem {currentPosition.shares} cotas de {currentPosition.ticker} (PM: {formatCurrency(currentPosition.avgPrice)})
-              </p>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={buy}
-                disabled={selectedStock.price * shares > balance}
-                className="btn-primary flex-1"
-              >
-                Comprar
-              </button>
-              <button
-                onClick={sell}
-                disabled={!currentPosition || currentPosition.shares < shares}
-                className="flex-1 px-6 py-3 rounded-xl font-semibold transition-all cursor-pointer border-none disabled:opacity-30 disabled:cursor-not-allowed"
-                style={{ background: "var(--red)", color: "white" }}
-              >
-                Vender
-              </button>
-            </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <Card>
+          <div className="text-[13px] text-muted">Patrimônio virtual</div>
+          <div className="text-[24px] font-bold tracking-tight mt-1">
+            <AnimatedNumber value={equity} format={brl} />
           </div>
-        </div>
-      )}
+        </Card>
+        <Card>
+          <div className="text-[13px] text-muted">Saldo disponível</div>
+          <div className="text-[24px] font-bold tracking-tight mt-1 tabular">{brl(sim.cash)}</div>
+        </Card>
+        <Card>
+          <div className="text-[13px] text-muted">Investido</div>
+          <div className="text-[24px] font-bold tracking-tight mt-1 tabular">{brl(posValue)}</div>
+        </Card>
+        <Card>
+          <div className="text-[13px] text-muted">Resultado</div>
+          <div className={clsx("text-[24px] font-bold tracking-tight mt-1 tabular", toneClass(ret))}>{pct((ret / SIMULATOR_START_CASH) * 100)}</div>
+          <div className={clsx("text-[13px] tabular", toneClass(ret))}>
+            {ret >= 0 ? "+" : ""}
+            {brl(ret)}
+          </div>
+        </Card>
+      </div>
 
-      {tab === "carteira" && (
-        <div className="card">
-          <h3 className="font-bold mb-4" style={{ color: "var(--emerald)" }}>Minha carteira</h3>
-          {portfolio.length === 0 ? (
-            <p className="text-center opacity-40 py-8">Nenhum investimento ainda. Comece comprando!</p>
-          ) : (
-            <div className="space-y-1">
-              {portfolio.map((p) => {
-                const stock = stocks.find((s) => s.ticker === p.ticker);
-                if (!stock) return null;
-                const currentValue = stock.price * p.shares;
-                const investedValue = p.avgPrice * p.shares;
-                const pl = currentValue - investedValue;
-                const plPercent = (pl / investedValue) * 100;
-                return (
-                  <div
-                    key={p.ticker}
-                    className="flex items-center justify-between py-3 border-b last:border-b-0"
-                    style={{ borderColor: "var(--navy-border)" }}
-                  >
-                    <div>
-                      <p className="font-bold">{p.ticker}</p>
-                      <p className="text-xs opacity-50">{p.shares} cotas &middot; PM: {formatCurrency(p.avgPrice)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">{formatCurrency(currentValue)}</p>
-                      <p className={`text-xs font-medium ${pl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {pl >= 0 ? "+" : ""}{formatCurrency(pl)} ({plPercent >= 0 ? "+" : ""}{plPercent.toFixed(2)}%)
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {tab === "historico" && (
-        <div className="card">
-          <h3 className="font-bold mb-4" style={{ color: "var(--emerald)" }}>Historico de transacoes</h3>
-          {transactions.length === 0 ? (
-            <p className="text-center opacity-40 py-8">Nenhuma transacao realizada.</p>
-          ) : (
-            <div className="space-y-1">
-              {transactions.map((t, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between py-3 border-b last:border-b-0"
-                  style={{ borderColor: "var(--navy-border)" }}
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`text-xs px-2 py-1 rounded font-bold ${
-                        t.type === "compra" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"
-                      }`}
-                    >
-                      {t.type.toUpperCase()}
-                    </span>
-                    <div>
-                      <p className="font-semibold text-sm">{t.ticker}</p>
-                      <p className="text-xs opacity-50">{t.shares} x {formatCurrency(t.price)}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-sm">{formatCurrency(t.total)}</p>
-                    <p className="text-xs opacity-40">{t.date}</p>
-                  </div>
+      <div className="grid gap-4 lg:grid-cols-5">
+        <Card className="lg:col-span-2 h-fit">
+          <SectionTitle title="Nova ordem" subtitle="Executada pelo preço real do momento" />
+          <div className="space-y-4">
+            <SegmentedControl
+              block
+              value={side}
+              onChange={setSide}
+              options={[
+                { value: "compra", label: "Comprar" },
+                { value: "venda", label: "Vender" },
+              ]}
+            />
+            <Field label="Ativo">
+              <AssetPicker value={symbol} onSelect={(r) => setSymbol(r.symbol)} />
+            </Field>
+            {symbol && (
+              <div className="rounded-2xl bg-line/[0.04] border border-line/10 px-4 py-3 flex items-center gap-3">
+                <AssetAvatar symbol={symbol} size={36} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold">{displaySymbol(symbol)}</div>
+                  <div className="text-[12.5px] text-muted truncate">{q?.name ?? "Carregando…"}</div>
                 </div>
-              ))}
+                <div className="text-right">
+                  <div className="font-semibold tabular">{q ? money(q.price, q.currency) : "—"}</div>
+                  <div className={clsx("text-[12.5px] tabular", toneClass(q?.changePercent))}>{q ? pct(q.changePercent) : ""}</div>
+                </div>
+              </div>
+            )}
+            <Field label="Quantidade" hint={position ? `Você tem ${num(position.quantity, position.quantity % 1 ? 4 : 0)} na carteira simulada.` : undefined}>
+              <NumberInput value={qty} onChange={setQty} min={0} decimals={catalogAsset(symbol ?? "")?.category === "cripto" ? 6 : 0} />
+            </Field>
+            <div className="flex items-center justify-between text-[14px]">
+              <span className="text-muted">Total estimado</span>
+              <span className="font-bold tabular text-[18px]">{brl(total)}</span>
             </div>
-          )}
+            {q && q.currency !== "BRL" && <div className="text-[12px] text-muted -mt-2">Convertido pelo câmbio atual ({q.currency}/BRL {num(rate, 4)}).</div>}
+            <Button block size="lg" variant={side === "compra" ? "primary" : "danger"} disabled={!symbol || !q || qty <= 0} loading={busy} onClick={() => void execute()}>
+              {side === "compra" ? "Comprar" : "Vender"} {symbol ? displaySymbol(symbol) : ""}
+            </Button>
+          </div>
+        </Card>
+
+        <div className="lg:col-span-3 space-y-4">
+          <Card padded={false} className="overflow-hidden">
+            <div className="px-5 pt-4 pb-2">
+              <SectionTitle title="Carteira simulada" subtitle={`Desde ${dateBR(sim.startedAt)}`} />
+            </div>
+            {sim.positions.length === 0 ? (
+              <EmptyState icon={Gamepad2} title="Nenhuma posição" description="Escolha um ativo e faça sua primeira compra virtual." />
+            ) : (
+              <div className="divide-y divide-line/[0.07]">
+                {sim.positions.map((p) => {
+                  const pq = quotes[p.symbol];
+                  const r = fx(p.currency, quotes) || 1;
+                  const value = p.quantity * (pq?.price ?? p.avgPrice) * r;
+                  const g = ((pq?.price ?? p.avgPrice) - p.avgPrice) / p.avgPrice;
+                  return (
+                    <button key={p.symbol} onClick={() => setSymbol(p.symbol)} className="w-full flex items-center gap-3 px-5 py-3 hover:bg-line/[0.03] text-left">
+                      <AssetAvatar symbol={p.symbol} size={38} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold">{displaySymbol(p.symbol)}</div>
+                        <div className="text-[12.5px] text-muted">
+                          {num(p.quantity, p.quantity % 1 ? 4 : 0)} × {money(p.avgPrice, p.currency)}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold tabular">{brl(value)}</div>
+                        <div className={clsx("text-[12.5px] tabular", toneClass(g))}>{pct(g * 100)}</div>
+                      </div>
+                      <ChangePill value={pq?.changePercent} size="sm" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          <Card padded={false} className="overflow-hidden">
+            <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+              <SectionTitle title="Histórico de ordens" />
+              <History size={18} className="text-muted" />
+            </div>
+            {sim.history.length === 0 ? (
+              <div className="px-5 pb-5 text-[14px] text-muted">Suas ordens aparecem aqui.</div>
+            ) : (
+              <div className="divide-y divide-line/[0.07] max-h-[360px] overflow-y-auto">
+                {sim.history.map((t) => (
+                  <div key={t.id} className="flex items-center gap-3 px-5 py-2.5">
+                    <Badge tone={t.side === "compra" ? "success" : "danger"}>{t.side === "compra" ? "Compra" : "Venda"}</Badge>
+                    <button className="font-semibold" onClick={() => navigate(`/mercado/${encodeURIComponent(t.symbol)}`)}>
+                      {displaySymbol(t.symbol)}
+                    </button>
+                    <span className="text-[13px] text-muted">
+                      {num(t.quantity, t.quantity % 1 ? 4 : 0)} × {num(t.price)}
+                    </span>
+                    <span className="flex-1" />
+                    <span className="text-[12px] text-muted">
+                      {dateBR(t.date, { day: "2-digit", month: "short" })} {timeBR(t.date)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </div>
-      )}
+      </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={() => {
+          update("simulator", { cash: SIMULATOR_START_CASH, startedAt: new Date().toISOString(), positions: [], history: [] });
+          setConfirmReset(false);
+          toast({ title: "Simulador reiniciado", message: "Você tem R$ 100.000 virtuais de novo.", tone: "success" });
+        }}
+        title="Reiniciar o simulador?"
+        message="Todas as posições e o histórico serão apagados e o saldo volta para R$ 100.000."
+        confirmLabel="Reiniciar"
+        danger
+      />
     </div>
   );
 }
