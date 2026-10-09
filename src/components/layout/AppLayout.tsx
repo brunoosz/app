@@ -77,8 +77,9 @@ function TitleBar({ onSearch }: { onSearch: () => void }) {
   return (
     <header
       className={clsx(
-        "drag h-[52px] shrink-0 flex items-center gap-2 px-4 sm:px-6 relative z-30",
-        platform === "win32" || platform === "linux" ? "pr-[150px]" : ""
+        "drag h-[52px] shrink-0 flex items-center gap-2 relative z-30",
+        // No Windows e no Linux os botões nativos da janela ficam à direita.
+        platform === "win32" || platform === "linux" ? "pl-4 sm:pl-6 pr-[150px]" : "px-4 sm:px-6"
       )}
     >
       <div className="sm:hidden flex items-center gap-2">

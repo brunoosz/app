@@ -9,7 +9,7 @@ export function Toaster() {
   const dismiss = useUi((s) => s.dismiss);
   const navigate = useNavigate();
   return (
-    <div className="fixed top-14 right-4 z-[80] flex flex-col gap-2 w-[360px] max-w-[calc(100vw-2rem)] pointer-events-none">
+    <div data-toaster className="fixed top-14 right-4 z-[80] flex flex-col gap-2 w-[360px] max-w-[calc(100vw-2rem)] pointer-events-none">
       <AnimatePresence initial={false}>
         {toasts.map((t) => {
           const Icon = t.tone === "success" ? CircleCheck : t.tone === "error" ? CircleX : Info;

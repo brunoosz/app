@@ -1,19 +1,71 @@
 <p align="center">
-  <img src="build/icon.png" width="96" alt="Ícone do Investa">
+  <img src="build/icon.png" width="88" alt="Ícone do Investa">
 </p>
 
 <h1 align="center">Investa</h1>
 
-<p align="center">Aprenda · Invista · Evolua</p>
+<p align="center">
+  Aplicativo para Windows que ensina a investir do zero.<br>
+  Aulas de poucos minutos, cotações do dia, controle de gastos e um professor de IA que responde com base na sua carteira.
+</p>
 
 <p align="center">
-  <a href="https://github.com/brunoosz/app/releases/latest"><img src="https://img.shields.io/github/v/release/brunoosz/app?label=download" alt="Última versão"></a>
+  <a href="https://github.com/brunoosz/app/releases/latest"><img src="https://img.shields.io/badge/Baixar_para_Windows-4F8CFF?style=for-the-badge&logo=windows&logoColor=white" alt="Baixar para Windows" height="34"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/brunoosz/app/releases/latest"><img src="https://img.shields.io/github/v/release/brunoosz/app?label=vers%C3%A3o&color=4F8CFF" alt="Última versão"></a>
   <a href="https://github.com/brunoosz/app/actions/workflows/build.yml"><img src="https://github.com/brunoosz/app/actions/workflows/build.yml/badge.svg" alt="Build"></a>
 </p>
 
-Aplicativo de desktop para quem está começando a investir. Tem uma trilha de aulas com quiz, carteira e mercado com cotações reais, controle de gastos, metas e um assistente de IA que responde com os indicadores do dia. Não existe servidor próprio: contas e dados ficam no computador de quem usa.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/capa-escuro.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/media/capa-claro.png">
+  <img src="docs/media/capa-escuro.png" alt="Tela inicial do Investa com patrimônio, divisão da carteira, trilha de aulas, objetivos e indicadores do dia">
+</picture>
+
+Você informa quanto ganha e quanto gasta e cadastra o que já tem investido. Com isso, o app mostra quanto a carteira rende, quanto falta para cada meta e qual é a próxima aula. As cotações vêm do Yahoo Finance, os títulos públicos, do Tesouro Direto, e os juros e a inflação, do Banco Central. Contas e dados ficam no seu computador. Só as perguntas ao Professor IA saem dele, junto com os dados que a IA usa para responder.
 
 O conteúdo é educativo e não é recomendação de investimento.
+
+## Mercado
+
+A tela Mercado tem 11 categorias: ações brasileiras e americanas, FIIs, ETFs, BDRs, Tesouro Direto, renda fixa bancária, cripto, moedas, índices e commodities. Cada ativo com cotação tem gráfico de linha ou de candles, de 1 dia até o histórico completo, com médias de 50 e 200 dias e, quando o Yahoo Finance informa, P/L e dividend yield.
+
+<img src="docs/media/mercado.gif" alt="Abrindo o Mercado, filtrando as ações por PETR, abrindo a PETR4, trocando o período do gráfico e mudando para candles" width="100%">
+
+## Aulas
+
+São 30 aulas em 10 módulos, de "o que é investir" até montar uma carteira, imposto de renda e como se proteger de golpes. Cada aula termina com um quiz de três perguntas. As respostas certas valem XP, e é preciso acertar as três para liberar a próxima aula.
+
+<p align="center">
+  <img src="docs/media/aula.gif" alt="Respondendo ao quiz de uma aula, ganhando XP e subindo de nível" width="82%">
+</p>
+
+## Gastos e metas
+
+Lance os gastos do mês por categoria e cartão, inclusive compras parceladas, e exporte o mês em PDF ou Excel. Cada meta tem valor e prazo. Com o CDI e o IPCA de hoje, o app projeta quanto você terá no fim do prazo e, se não for suficiente, quanto precisa aplicar por mês. Para a parte aplicada em CDB, LCI ou LCA, também mostra quanto você teria em outros bancos.
+
+<img src="docs/media/gastos.gif" alt="Lançando um notebook de R$ 4.200 em 10 vezes no cartão" width="100%">
+
+## Mais telas
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/carteira.png" alt="Carteira"><br><sub>Carteira dividida por classe de ativo e por banco</sub></td>
+    <td width="50%"><img src="docs/media/objetivo-projecao.png" alt="Projeção de uma meta"><br><sub>Projeção de uma meta e comparação entre bancos</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/ativo.png" alt="Página da PETR4"><br><sub>Página de um ativo, com indicadores explicados</sub></td>
+    <td><img src="docs/media/bancos.png" alt="Ranking de bancos"><br><sub>Ranking de bancos com o motivo de cada nota</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/alertas.png" alt="Alertas"><br><sub>Avisos automáticos sobre os ativos da carteira</sub></td>
+    <td><img src="docs/media/simulador.png" alt="Simulador"><br><sub>Simulador com R$ 100 mil virtuais</sub></td>
+  </tr>
+</table>
+
+<sub>As imagens usam uma conta de demonstração, com cotações, juros e indicadores reais do dia da captura.</sub>
 
 ## Download
 
@@ -38,7 +90,7 @@ No login, além de usuário e senha, é preciso escolher o cargo da conta. Se o 
 
 O Administrador gerencia só contas de Usuário, só o Dono muda cargos, e o app não deixa remover, rebaixar nem bloquear o último Dono.
 
-## Telas
+## Todas as telas
 
 | Tela | O que faz |
 |---|---|
@@ -140,8 +192,11 @@ O `electron:dev` compila o processo principal uma vez e abre o Vite (porta 5173)
 | `npm run build` | Roda o typecheck e gera a interface em `dist/` e o processo principal em `dist-electron/` |
 | `npm run electron:start` | Faz o build e abre o app compilado |
 | `npm run icons` | Gera os ícones de novo a partir de `shared/brand.ts` |
+| `npm run media` | Gera os prints e GIFs deste README em `docs/media` |
 
 O script de ícones precisa do Chromium (caminho definido em `CHROMIUM_PATH`) e do comando `convert` do ImageMagick. Os ícones gerados já estão no repositório, então só rode esse script se for mudar a marca.
+
+O `npm run media` faz o build, abre o app com uma conta de demonstração e precisa de internet e do `ffmpeg`. Se o `gifsicle` e o `pngquant` estiverem instalados, os arquivos saem menores. Com a `NVIDIA_API_KEY` definida, ele também grava um GIF do Professor IA. No Linux sem interface gráfica, rode como no CI: `npm run build && xvfb-run -a -s "-screen 0 3200x2000x24" node scripts/capture.mjs`.
 
 ### Testes
 
@@ -171,12 +226,14 @@ Os arquivos vão para `release/`. Builds locais saem com a versão `1.0.0` do `p
 
 ### CI e releases
 
-O workflow [`build.yml`](.github/workflows/build.yml) roda em todo push para `main`, `master` e `claude/**`, em tags `v*` e também quando acionado manualmente. Ele tem dois jobs, que rodam em paralelo:
+O workflow [`build.yml`](.github/workflows/build.yml) roda em todo push para `main`, `master` e `claude/**`, em tags `v*` e também quando acionado manualmente. Pushes que mudam só o README, `docs/` ou o script de captura não disparam esse workflow. Ele tem dois jobs, que rodam em paralelo:
 
 - Linux: faz o build, roda o smoke test (uma falha aqui não interrompe o job) e o teste e2e. Os prints ficam salvos no artefato `prints-das-telas`.
 - Windows: gera os dois `.exe` com a versão `1.0.<número da execução>` e publica a release `v1.0.<n>` como a mais recente.
 
 Por causa dessa numeração, enviar uma tag `v*` também gera uma release `v1.0.<n>`, e não uma com o nome da tag. Como o job do Windows não espera o de testes, a release sai mesmo se o teste e2e falhar.
+
+O workflow [`media.yml`](.github/workflows/media.yml) gera as imagens deste README. Ele roda quando `scripts/capture.mjs` ou o próprio `media.yml` mudam em um branch `claude/**`, ou quando acionado manualmente, e faz commit do resultado em `docs/media`. Se o repositório tiver o secret `NVIDIA_API_KEY`, o GIF do Professor IA também é gravado.
 
 ## Estrutura
 
@@ -187,9 +244,10 @@ electron/          processo principal: janela, IPC, bandeja e notificações
   smoke.ts         teste das fontes de dados
 src/               interface em React: telas, componentes e estado (Zustand)
 shared/            código usado pelos dois lados: tipos, catálogo de ativos, aulas, glossário e bancos
-scripts/           build do processo principal, teste e2e e geração de ícones
+scripts/           build do processo principal, teste e2e, ícones e imagens do README
 build/             ícones usados pelo electron-builder
 resources/         ícone empacotado junto com o app
+docs/media/        prints e GIFs do README, gerados por scripts/capture.mjs
 ```
 
 Stack: Electron 43, React 18, Vite 5, TypeScript 5, Tailwind CSS 3, Zustand 5, React Router 6, lightweight-charts 5 e ExcelJS. O processo principal é empacotado com esbuild.

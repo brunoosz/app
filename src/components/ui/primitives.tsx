@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { motion, useSpring } from "framer-motion";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import { ChevronRight, Loader2, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import { initials } from "@/lib/format";
@@ -236,14 +236,39 @@ export function Stat({ label, value, sub, className }: { label: ReactNode; value
   );
 }
 
+// Anima do valor mostrado até o novo valor. Se o valor mudar no meio da
+// animação (por exemplo, quando chegam as últimas cotações), recomeça de onde
+// parou e termina sempre exatamente no valor atual.
 export function AnimatedNumber({ value, format, className }: { value: number; format: (n: number) => string; className?: string }) {
-  const spring = useSpring(value, { stiffness: 110, damping: 22, mass: 0.8 });
-  const [display, setDisplay] = useState(() => format(value));
+  const [display, setDisplay] = useState(value);
+  const current = useRef(value);
   useEffect(() => {
-    spring.set(value);
-  }, [spring, value]);
-  useEffect(() => spring.on("change", (v) => setDisplay(format(v))), [spring, format]);
-  return <span className={clsx("tabular", className)}>{display}</span>;
+    const from = current.current;
+    if (from === value) return;
+    const started = performance.now();
+    const duration = 700;
+    let frame = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - started) / duration);
+      const next = t >= 1 ? value : from + (value - from) * (1 - Math.pow(1 - t, 3));
+      current.current = next;
+      setDisplay(next);
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    // Garante o valor final mesmo se o navegador pausar os quadros (janela em
+    // segundo plano, por exemplo).
+    const done = setTimeout(() => {
+      cancelAnimationFrame(frame);
+      current.current = value;
+      setDisplay(value);
+    }, duration + 150);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(done);
+    };
+  }, [value]);
+  return <span className={clsx("tabular", className)}>{format(display)}</span>;
 }
 
 export function LiveDot({ className }: { className?: string }) {

@@ -4,6 +4,12 @@ on:
   push:
     branches: ["main", "master", "claude/**"]
     tags: ["v*"]
+    # Mudanças só no README ou nas imagens não geram uma release nova.
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "scripts/capture.mjs"
+      - ".github/workflows/media.yml"
   workflow_dispatch:
 
 permissions:
