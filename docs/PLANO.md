@@ -52,6 +52,7 @@ Hoje o "Saldo" do topo é renda + extras − gastos lançados, e não desconta a
   1. **Tavily** (1.000 buscas/mês grátis, feita para IA, devolve o texto já resumido) ou **Brave Search API** (plano grátis com cota mensal). O Dono cola a chave em Configurações, igual à da NVIDIA, e ela vale para todas as contas pela nuvem.
   2. **Jina Reader** (`r.jina.ai/<link>`, grátis e sem chave) para ler o conteúdo de uma página encontrada.
   3. **Wikipedia** (API aberta, sem chave) como fonte extra para conceitos.
+  - Decidido: usar essa pesquisa para o plano de riqueza encontrar na internet planos, métodos e referências reais e montar o plano com elas.
   - O Assistente ganha um interruptor "Pesquisar na internet" e mostra as fontes usadas no fim da resposta e no PDF.
 - Lembretes mensais para cumprir o plano.
 
@@ -79,7 +80,7 @@ Hoje o "Saldo" do topo é renda + extras − gastos lançados, e não desconta a
 ## 13. Resumo semanal no domingo
 - Todo domingo: quanto gastou na semana, comparação com a semana anterior, quanto sobra no mês, contas que vencem na semana e uma dica do Assistente. Notificação + card na Início, e opção de desligar em Configurações.
 
-## 14. Limpeza do histórico do GitHub (por último)
+## 14. Limpeza do histórico do GitHub (SÓ quando o Bruno pedir, com o app 100% pronto)
 - Um commit único com a conta do Bruno como autor, sem menção ao Claude; trocar a `main`; tirar `claude/**` do `media.yml`; apagar as branches antigas.
 
 ## Outras ideias
