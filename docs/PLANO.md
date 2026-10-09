@@ -2,10 +2,7 @@
 
 Pedidos de 09/10/2026, na ordem em que devem ser feitos. Cada etapa vira uma versão (1.0.22, 1.0.23...).
 
-## 0. Antes de tudo: nuvem funcionando (sem código)
-- Supabase → Authentication → Sign In / Providers → **Email** → ligar "Enable Email provider" (está DISABLED) e deixar "Confirm email" desligado.
-- Entrar no PC primeiro e conferir em Table Editor → profiles se aparece o usuário com cargo `dono`.
-- Com isso, **faturas, gastos, saldos, metas e o progresso das aulas** já passam a ficar salvos na conta e aparecem no PC e no celular (é tudo `data` do perfil, sincronizado a cada ~45 s em `core/cloud.ts`). Se depois disso algo não sincronizar, investigar o caso específico.
+Nuvem já configurada (Email ligado no Supabase, login feito em 09/10/2026): faturas, gastos, saldos, metas e aulas ficam salvos na conta e sincronizam entre PC e celular.
 
 ## 1. IA rápida (prioridade)
 Causa provável dos 3 minutos: o modo automático escolhe os modelos maiores (DeepSeek, Kimi, GLM), que na conta grátis da NVIDIA ficam em fila, e cada tentativa espera até 40 s antes de trocar (`core/ai.ts`, `FIRST_BYTE_MS`), até 4 modelos.
