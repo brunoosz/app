@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0b1929;
+  --foreground: #f0f4ff;
+  --emerald: #10b981;
+  --emerald-light: #34d399;
+  --emerald-dark: #059669;
+  --navy-card: #112240;
+  --navy-border: #1e3a5f;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--navy-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--emerald);
+}
+
+@layer utilities {
+  .card {
+    @apply rounded-2xl border p-6;
+    background: var(--navy-card);
+    border-color: var(--navy-border);
+  }
+
+  .btn-primary {
+    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200 cursor-pointer;
+    background: var(--emerald);
+    color: white;
+    border: none;
+  }
+
+  .btn-primary:hover {
+    background: var(--emerald-dark);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.3;
+    transform: none;
+    cursor: not-allowed;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border text-sm;
+    background: var(--navy-card);
+    border-color: var(--navy-border);
+    color: var(--foreground);
+    outline: none;
+  }
+
+  .input-field:focus {
+    border-color: var(--emerald);
+  }
+}
