@@ -1,5 +1,5 @@
 import type { CopomInfo, CopomMeeting, FocusExpectations, Indicators, SeriesValue } from "@shared/types";
-import { brDateToIso, cached, getJson, isoToBrDate, todayIsoSaoPaulo } from "./http";
+import { brDateToIso, cached, getJson, isoToBrDate, mapLimit, todayIsoSaoPaulo } from "./http";
 
 const SGS = "https://api.bcb.gov.br/dados/serie/bcdata.sgs";
 const OLINDA = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata";
@@ -10,7 +10,12 @@ interface SgsRow {
 }
 
 async function sgsLast(code: number, n = 1): Promise<SeriesValue[]> {
-  const rows = await getJson<SgsRow[]>(`${SGS}.${code}/dados/ultimos/${n}?formato=json`);
+  let rows: SgsRow[];
+  try {
+    rows = await getJson<SgsRow[]>(`${SGS}.${code}/dados/ultimos/${n}?formato=json`, {}, 9_000);
+  } catch {
+    rows = await getJson<SgsRow[]>(`${SGS}.${code}/dados/ultimos/${n}?formato=json`, {}, 9_000);
+  }
   return rows
     .map((r) => ({ date: brDateToIso(r.data), value: parseFloat(r.valor) }))
     .filter((r) => Number.isFinite(r.value));
@@ -34,18 +39,25 @@ function settled<T>(r: PromiseSettledResult<T>): T | undefined {
 
 export async function getIndicators(): Promise<Indicators> {
   return cached("bcb:indicators", 30 * 60_000, async () => {
-    const results = await Promise.allSettled([
-      sgsLast(432, 1),
-      sgsLast(4389, 1),
-      sgsLast(433, 1),
-      sgsLast(13522, 1),
-      sgsLast(1, 2).catch(() => sgsLast(10813, 2)),
-      sgsLast(21619, 1),
-      sgsLast(195, 1),
-      sgsLast(226, 1),
-      sgsLast(12, 1),
-    ]);
-    const [selic, cdiAnnual, ipcaMonth, ipca12, dollar, euro, savings, tr, cdiDaily] = results.map(settled);
+    // O SGS do Banco Central trava com muitas consultas simultâneas: no máximo 3 por vez.
+    const jobs: (() => Promise<SeriesValue[]>)[] = [
+      () => sgsLast(432, 1),
+      () => sgsLast(4389, 1),
+      () => sgsLast(433, 1),
+      () => sgsLast(13522, 1),
+      () => sgsLast(1, 2).catch(() => sgsLast(10813, 2)),
+      () => sgsLast(21619, 1),
+      () => sgsLast(195, 1),
+      () => sgsLast(226, 1),
+    ];
+    const results = await mapLimit(jobs, 3, (job) =>
+      job().then(
+        (value): PromiseSettledResult<SeriesValue[]> => ({ status: "fulfilled", value }),
+        (reason): PromiseSettledResult<SeriesValue[]> => ({ status: "rejected", reason })
+      )
+    );
+    const [selic, cdiAnnual, ipcaMonth, ipca12, dollar, euro, savings, tr] = results.map(settled);
+    const cdiDaily = cdiAnnual ? undefined : await sgsLast(12, 1).catch(() => undefined);
     let cdi = cdiAnnual?.[0];
     if (!cdi && cdiDaily?.[0]) {
       cdi = { date: cdiDaily[0].date, value: (Math.pow(1 + cdiDaily[0].value / 100, 252) - 1) * 100 };
@@ -86,11 +98,20 @@ interface FocusSelicRow {
   Mediana: number;
 }
 
+interface FocusAnnualRowFull extends FocusAnnualRow {
+  baseCalculo: number;
+}
+
+async function focusAnnualRows(): Promise<FocusAnnualRowFull[]> {
+  return cached("bcb:focus-annual", 6 * 3600_000, async () => {
+    const url = `${OLINDA}/ExpectativasMercadoAnuais?$top=600&$orderby=Data%20desc&$format=json`;
+    const json = await getJson<{ value: FocusAnnualRowFull[] }>(url, {}, 20_000);
+    return (json.value ?? []).filter((r) => r.baseCalculo === 0);
+  });
+}
+
 async function focusAnnual(indicator: string): Promise<{ year: number; value: number } | undefined> {
-  const filter = encodeURIComponent(`Indicador eq '${indicator}' and baseCalculo eq 0`);
-  const url = `${OLINDA}/ExpectativasMercadoAnuais?$top=12&$filter=${filter}&$orderby=${encodeURIComponent("Data desc")}&$format=json&$select=Indicador,Data,DataReferencia,Mediana`;
-  const json = await getJson<{ value: FocusAnnualRow[] }>(url, {}, 15_000);
-  const rows = json.value ?? [];
+  const rows = (await focusAnnualRows()).filter((r) => r.Indicador === indicator);
   if (!rows.length) return undefined;
   const latest = rows[0].Data;
   const year = new Date().getFullYear();
@@ -106,10 +127,9 @@ function meetingOrder(code: string): number {
 }
 
 async function focusNextMeeting(): Promise<{ meeting: string; value: number; date: string } | undefined> {
-  const filter = encodeURIComponent("baseCalculo eq 0");
-  const url = `${OLINDA}/ExpectativasMercadoSelic?$top=30&$filter=${filter}&$orderby=${encodeURIComponent("Data desc")}&$format=json&$select=Data,Reuniao,Mediana`;
-  const json = await getJson<{ value: FocusSelicRow[] }>(url, {}, 15_000);
-  const rows = json.value ?? [];
+  const url = `${OLINDA}/ExpectativasMercadoSelic?$top=60&$orderby=Data%20desc&$format=json`;
+  const json = await getJson<{ value: (FocusSelicRow & { baseCalculo: number })[] }>(url, {}, 15_000);
+  const rows = (json.value ?? []).filter((r) => r.baseCalculo === 0);
   if (!rows.length) return undefined;
   const latest = rows[0].Data;
   const sameDay = rows.filter((r) => r.Data === latest).sort((a, b) => meetingOrder(a.Reuniao) - meetingOrder(b.Reuniao));
@@ -126,6 +146,7 @@ export async function getFocus(): Promise<FocusExpectations> {
       focusAnnual("Câmbio"),
       focusNextMeeting(),
     ]);
+    if (ipcaR.status === "rejected" && meetingR.status === "rejected") throw ipcaR.reason;
     const ipca = settled(ipcaR);
     const selic = settled(selicR);
     const pib = settled(pibR);

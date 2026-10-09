@@ -232,6 +232,7 @@ function TesouroPanel() {
       </div>
       {loading && !data && (
         <div className="p-5 space-y-2">
+          <div className="text-[13px] text-muted mb-1">Baixando a base oficial do Tesouro Direto — na primeira vez pode levar alguns segundos.</div>
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-12" />
           ))}

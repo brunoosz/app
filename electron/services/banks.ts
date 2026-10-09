@@ -27,20 +27,11 @@ interface TaxaRow {
 
 export async function getCreditRates(): Promise<CreditRatesData> {
   return cached("bcb:credit", 12 * 3600_000, async () => {
-    const latest = await getJson<{ value: { InicioPeriodo: string }[] }>(
-      `${TAXAS}/TaxasJurosDiariaPorInicioPeriodo?$top=1&$orderby=${encodeURIComponent("InicioPeriodo desc")}&$format=json&$select=InicioPeriodo`,
-      {},
-      20_000
-    );
-    const period = latest.value?.[0]?.InicioPeriodo;
+    const json = await getJson<{ value: TaxaRow[] }>(`${TAXAS}/TaxasJurosDiariaPorInicioPeriodo?$top=6000&$orderby=InicioPeriodo%20desc&$format=json`, {}, 40_000);
+    const all = json.value ?? [];
+    const period = all[0]?.InicioPeriodo;
     if (!period) throw new Error("Taxas de juros do BCB indisponíveis");
-    const filter = encodeURIComponent(`InicioPeriodo eq '${period}' and Segmento eq 'PESSOA FÍSICA'`);
-    const json = await getJson<{ value: TaxaRow[] }>(
-      `${TAXAS}/TaxasJurosDiariaPorInicioPeriodo?$top=5000&$filter=${filter}&$format=json`,
-      {},
-      30_000
-    );
-    const rows = json.value ?? [];
+    const rows = all.filter((r) => r.InicioPeriodo === period && /f[íi]sica/i.test(r.Segmento));
     const modalities = MODALITIES.map((m) => {
       const rates: CreditRate[] = rows
         .filter((r) => m.match(r.Modalidade) && r.TaxaJurosAoMes > 0)

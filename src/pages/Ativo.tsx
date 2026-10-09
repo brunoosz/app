@@ -233,7 +233,7 @@ export function Ativo() {
             <div>
               <StatItem label="Abertura" value={money(q.open, currency)} />
               <StatItem label="Fechamento anterior" value={money(q.previousClose, currency)} />
-              <StatItem label="Mínima / máxima do dia" value={`${num(q.dayLow)} – ${num(q.dayHigh)}`} />
+              {q.dayLow && q.dayHigh ? <StatItem label="Mínima / máxima do dia" value={`${num(q.dayLow)} – ${num(q.dayHigh)}`} /> : null}
               {q.volume ? <StatItem label="Volume" value={compact(q.volume)} /> : null}
               {q.fiftyTwoWeekLow && q.fiftyTwoWeekHigh ? <RangeBar low={q.fiftyTwoWeekLow} high={q.fiftyTwoWeekHigh} value={q.price} label="Faixa de 52 semanas" /> : null}
               {q.fiftyDayAverage ? <StatItem label="Média de 50 dias" value={money(q.fiftyDayAverage, currency)} /> : null}

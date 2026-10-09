@@ -77,8 +77,9 @@ async function main(): Promise<void> {
     await step(`BCB: série SGS ${code}`, () => sgsProbe(code), (r) => JSON.stringify(r));
   }
   for (const url of [
-    "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoSelic?$top=1&$format=json",
-    "https://www.tesourodireto.com.br/json/br/com/b3/tesourodireto/service/api/treasurybondsinfo.json",
+    "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoSelic?$top=1&$orderby=Data%20desc&$format=json",
+    "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais?$top=1&$filter=Indicador%20eq%20%27IPCA%27&$format=json",
+    "https://olinda.bcb.gov.br/olinda/servico/taxaJuros/versao/v2/odata/TaxasJurosDiariaPorInicioPeriodo?$top=1&$orderby=InicioPeriodo%20desc&$format=json",
   ]) {
     await step(
       `Diagnóstico ${new URL(url).host}`,

@@ -48,6 +48,11 @@ function num(v: any): number | undefined {
   return undefined;
 }
 
+function positive(v: any): number | undefined {
+  const n = num(v);
+  return n !== undefined && n > 0 ? n : undefined;
+}
+
 function mapQuote(q: any): Quote | null {
   const price = num(q.regularMarketPrice);
   if (price === undefined || price <= 0) return null;
@@ -63,10 +68,10 @@ function mapQuote(q: any): Quote | null {
     change,
     changePercent,
     previousClose: prev,
-    open: num(q.regularMarketOpen),
-    dayHigh: num(q.regularMarketDayHigh),
-    dayLow: num(q.regularMarketDayLow),
-    volume: num(q.regularMarketVolume),
+    open: positive(q.regularMarketOpen),
+    dayHigh: positive(q.regularMarketDayHigh),
+    dayLow: positive(q.regularMarketDayLow),
+    volume: positive(q.regularMarketVolume),
     fiftyTwoWeekHigh: num(q.fiftyTwoWeekHigh),
     fiftyTwoWeekLow: num(q.fiftyTwoWeekLow),
     fiftyDayAverage: num(q.fiftyDayAverage),

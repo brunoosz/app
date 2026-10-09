@@ -480,6 +480,10 @@ app.whenReady().then(() => {
   }
   registerIpc();
   createWindow();
+  // Pré-carrega os dados oficiais mais lentos para as telas abrirem rápido.
+  setTimeout(() => {
+    void Promise.allSettled([getIndicators(), getCopom(), getNews(), getTesouro(), getBanks()]);
+  }, 2500);
   if (isDev) win?.webContents.on("before-input-event", (_e, input) => {
     if (input.key === "F12") win?.webContents.toggleDevTools();
   });
