@@ -4,6 +4,31 @@ Pedidos de 09/10/2026, na ordem em que devem ser feitos. Cada etapa vira uma ver
 
 Nuvem já configurada (Email ligado no Supabase, login feito em 09/10/2026): faturas, gastos, saldos, metas e aulas ficam salvos na conta e sincronizam entre PC e celular.
 
+## Prioridade (atualizada em 09/10/2026, depois do teste no celular)
+1. **IA funcionando no celular** (A)
+2. **Chave da IA que nunca se perde** (B)
+3. **IA rápida** (item 1)
+4. **Gastos: o que sobra de verdade** (item 2)
+5. **Celular: notificações e números cortados** (C), junto com o visual (item 3)
+6. Daí em diante, seguir a numeração abaixo (4 a 13).
+
+## A. IA no celular travada em "Pensando…"
+- No celular (1.0.23, "Automático · GLM 5.3") a pergunta "teste" fica parada em "Pensando…". No PC funciona.
+- Suspeita: o streaming pelo fetch do WebView (`CapacitorWebFetch`, em `src/mobile/bridge.ts`) é bloqueado por CORS ou fica pendurado, e o fallback nativo só devolve tudo no fim.
+- Correção: no celular, usar a requisição nativa (CapacitorHttp) sem streaming, com tempo-limite, e mostrar a resposta inteira quando chegar. Tentar streaming só se der certo no primeiro teste e guardar o resultado.
+- O tempo-limite e a troca de modelo do item 1 valem para o celular também; nunca deixar "Pensando…" passar de ~30 s sem trocar de modelo ou mostrar um erro.
+
+## B. Chave da IA que nunca precisa ser colocada de novo
+- No PC, depois de atualizar o app, foi preciso tirar e colocar a chave de novo.
+- A chave do Dono fica guardada na nuvem (`app_settings.ai`). Ao abrir o app, se a chave local estiver faltando ou não abrir (criptografia do Windows trocada na atualização), buscar a da nuvem automaticamente.
+- Se a chave local existir e a da nuvem estiver vazia (chave colocada antes da nuvem), enviar a local para a nuvem.
+- Testar a chave ao abrir; se a NVIDIA recusar (401), avisar só o Dono com um link direto para Configurações.
+
+## C. Celular: notificações e números
+- O painel de notificações não fecha: tocar de novo no sino deve fechar, assim como tocar fora do painel ou no botão voltar do Android.
+- Números grandes vazam do card (ex.: "R$ 100.000,00" no Simulador). Criar um componente de valor que diminui a fonte até caber (ou abrevia: "R$ 100 mil") e usar em todos os cards de valor.
+- Passar por todas as telas em 360, 390, 412 e 768 px no e2e, com uma checagem automática de texto saindo do card, para não acontecer de novo.
+
 ## 1. IA rápida (prioridade)
 Causa provável dos 3 minutos: o modo automático escolhe os modelos maiores (DeepSeek, Kimi, GLM), que na conta grátis da NVIDIA ficam em fila, e cada tentativa espera até 40 s antes de trocar (`core/ai.ts`, `FIRST_BYTE_MS`), até 4 modelos.
 - Ranking com peso em velocidade: preferir modelos médios e rápidos para conversa (ex.: Llama 3.3/4 médio, Mistral Small, Nemotron Nano/Super, Qwen médio) e deixar os gigantes só para relatórios.
