@@ -274,9 +274,9 @@ export async function checkDeal(input: DealInput, budget: DealCheck["budget"]): 
           if (!page.price && /mercadoli(vre|bre)\.com/i.test(finalUrl) && finalUrl !== url) p = await mercadoLivreApi(finalUrl);
           p = p?.price ? { ...page, ...p } : { ...p, ...page };
         }
-        result.title = p.title;
+        result.title = /account-verification|captcha/i.test(finalUrl) ? undefined : p.title;
         result.image = p.image;
-        result.url = finalUrl;
+        result.url = /account-verification|captcha/i.test(finalUrl) ? url : finalUrl;
         result.source = storeName(finalUrl);
         if (p.price) {
           result.currentPrice = p.price;
@@ -285,7 +285,11 @@ export async function checkDeal(input: DealInput, budget: DealCheck["budget"]): 
           if (p.regularPrice && p.regularPrice > p.price) result.discountPercent = Math.round((1 - p.price / p.regularPrice) * 100);
           offers.push({ store: result.source, price: p.price, currency: result.currency, priceBrl: result.currency === "BRL" ? p.price : undefined, regularPrice: p.regularPrice, url: finalUrl });
         } else {
-          notes.push(`Não consegui ler o preço na página da ${result.source}. Informe o preço no campo ao lado.`);
+          notes.push(
+            /account-verification|captcha|validatecaptcha|robot/i.test(finalUrl)
+              ? `A ${result.source} pediu uma verificação anti-robô e não mostrou o preço. Informe o preço no campo ao lado (o resto da análise funciona igual).`
+              : `Não consegui ler o preço na página da ${result.source}. Informe o preço no campo ao lado.`
+          );
         }
       } catch {
         notes.push("Não foi possível abrir o link agora. Informe o preço no campo ao lado.");
