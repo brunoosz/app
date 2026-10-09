@@ -11,8 +11,18 @@ import { fetchWithTimeout } from "./http";
 declare const __INVESTA_CLOUD_URL__: string | undefined;
 declare const __INVESTA_CLOUD_KEY__: string | undefined;
 
-const CLOUD_URL = (typeof __INVESTA_CLOUD_URL__ === "string" ? __INVESTA_CLOUD_URL__ : "").replace(/\/+$/, "");
-const CLOUD_KEY = typeof __INVESTA_CLOUD_KEY__ === "string" ? __INVESTA_CLOUD_KEY__ : "";
+/** Só o endereço do projeto (https://xxxx.supabase.co), mesmo se o segredo vier com /rest/v1/ ou espaços. */
+function projectUrl(raw: string): string {
+  const text = raw.trim().replace(/^["']|["']$/g, "");
+  if (!text) return "";
+  try {
+    return new URL(/^https?:\/\//.test(text) ? text : `https://${text}`).origin;
+  } catch {
+    return "";
+  }
+}
+const CLOUD_URL = projectUrl(typeof __INVESTA_CLOUD_URL__ === "string" ? __INVESTA_CLOUD_URL__ : "");
+const CLOUD_KEY = (typeof __INVESTA_CLOUD_KEY__ === "string" ? __INVESTA_CLOUD_KEY__ : "").trim().replace(/^["']|["']$/g, "");
 
 /** O Supabase entra por e-mail; o app usa nome de usuário, então cada usuário vira um e-mail interno. */
 const emailOf = (username: string) => `${username.trim().toLowerCase()}@contas.investa.app`;
