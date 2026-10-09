@@ -102,6 +102,32 @@ async function settle(win, { timeout = Number(process.env.CAPTURE_TIMEOUT_MS) ||
   await sleep(extra);
 }
 
+// Espera os números animados pararem. O patrimônio, por exemplo, sobe até o
+// valor final quando as últimas cotações chegam.
+async function steady(win, { quiet = 1500, timeout = 12_000 } = {}) {
+  const until = Date.now() + timeout;
+  let last = "";
+  let since = Date.now();
+  while (Date.now() < until) {
+    const text = await win.evaluate(() => (document.querySelector("main") ?? document.body).innerText);
+    if (text !== last) {
+      last = text;
+      since = Date.now();
+    } else if (Date.now() - since >= quiet) return;
+    await sleep(250);
+  }
+}
+
+async function hideScrollbars(win) {
+  await win.evaluate(() => {
+    if (document.getElementById("capture-scroll")) return;
+    const s = document.createElement("style");
+    s.id = "capture-scroll";
+    s.textContent = "::-webkit-scrollbar { width: 0 !important; height: 0 !important; }";
+    document.head.appendChild(s);
+  });
+}
+
 // Esconde toasts e o cursor de texto piscando para os prints ficarem limpos.
 async function cleanUi(win) {
   await win.evaluate(() => {
@@ -145,7 +171,8 @@ const CURSOR = `(() => {
 })()`;
 
 function pointer(win) {
-  let pos = { x: MOTION.width * 0.62, y: MOTION.height * 0.55 };
+  // Começa sobre o título da página, longe de gráficos com tooltip.
+  let pos = { x: MOTION.width * 0.55, y: 110 };
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
   // O tempo do movimento é medido no relógio, porque cada mouse.move leva
@@ -173,6 +200,7 @@ function pointer(win) {
   }
   return {
     async show() {
+      await hideScrollbars(win);
       await win.evaluate(CURSOR);
       await win.mouse.move(pos.x, pos.y);
     },
@@ -478,6 +506,7 @@ async function still(name, route, { before, wait = 1200, timeout } = {}) {
     await sleep(500);
     if (before) await before();
     await settle(win, { extra: wait, timeout });
+    await steady(win);
     await cleanUi(win);
     stills[name] = await shot(win, name);
     log(`print ${name}`);
@@ -595,7 +624,7 @@ await attempt("mercado.gif", async () => {
   });
 });
 
-// Aula: a sétima da trilha, do último card até a aprovação. A aula ocupa só o
+// Aula: o quiz da sétima aula da trilha até a aprovação. A aula ocupa só o
 // centro da tela, então a janela fica menor neste GIF.
 await attempt("aula.gif", async () => {
   const next = shared.ALL_LESSONS[6].lesson;
@@ -608,12 +637,14 @@ await attempt("aula.gif", async () => {
     await win.getByRole("button", { name: "Continuar", exact: true }).click();
     await sleep(700);
   }
+  await win.getByRole("button", { name: "Ir para o quiz" }).click();
+  await win.getByText(`Questão 1 de ${next.quiz.length}`).waitFor();
+  await sleep(900);
   await record(
     win,
     "aula",
     async () => {
-      await sleep(600);
-      await cursor.click(win.getByRole("button", { name: "Ir para o quiz" }));
+      await sleep(300);
       for (let i = 0; i < next.quiz.length; i++) {
         await win.getByText(`Questão ${i + 1} de ${next.quiz.length}`).waitFor();
         await sleep(650);
@@ -626,7 +657,7 @@ await attempt("aula.gif", async () => {
       await win.getByText("ganhos nesta aula").waitFor();
       await sleep(2300);
     },
-    { speed: 1.15 }
+    { speed: 1.25 }
   );
   await win.keyboard.press("Escape");
   await sleep(600);
