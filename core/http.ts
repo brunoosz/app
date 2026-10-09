@@ -46,7 +46,7 @@ export function writeDiskCache(name: string, data: unknown): void {
     // sem disco: segue só com o cache em memória
   }
 }
-const BROWSER_HOSTS = new Set(["olinda.bcb.gov.br", "www.tesourodireto.com.br", "api.bcb.gov.br"]);
+const BROWSER_HOSTS = new Set(["olinda.bcb.gov.br", "www.tesourodireto.com.br", "api.bcb.gov.br", "www.cheapshark.com", "store.steampowered.com"]);
 
 /** No app desktop, usa a pilha de rede do Chromium para servidores que bloqueiam clientes que não são navegadores. */
 export function setBrowserFetch(fn: FetchImpl): void {
