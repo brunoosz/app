@@ -216,11 +216,21 @@ export function Assistente() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [info.data]);
 
+  // Parar antes da resposta começar apaga a pergunta e a bolha "Pensando…" e devolve o texto para a caixa.
   const stop = () => {
     const req = requestRef.current;
     if (req) void api.ai.cancel(req.requestId);
     requestRef.current = null;
     setStreamingId(null);
+    if (!req) return;
+    const list = useSession.getState().data.chat;
+    const reply = list.find((m) => m.id === req.messageId);
+    if (reply && !reply.content.trim()) {
+      const idx = list.findIndex((m) => m.id === req.messageId);
+      const question = idx > 0 && list[idx - 1].role === "user" ? list[idx - 1] : null;
+      update("chat", (l) => l.filter((m) => m.id !== req.messageId && m.id !== question?.id));
+      if (question) setInput(question.content);
+    }
   };
 
   const retryLast = () => {

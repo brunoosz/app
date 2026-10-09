@@ -26,12 +26,37 @@ interface ResolvedConfig {
 
 export type ChatMessageIn = { role: "system" | "user" | "assistant"; content: string };
 
-class ThinkFilter {
+/** Começos típicos de modelos que escrevem o raciocínio como texto, sem as tags <think>. */
+const THINKING_START =
+  /^\s*(\*\*)?(here'?s (a|my) (thinking|thought) process|thinking process|thought process|okay[,.!]\s+(so|let|the|i|we|here)\b|alright[,.]\s|let me |let's |we need to |the user |i need to |i will |i'll |first,? i |\d\.\s+\*\*analy[sz]e)/i;
+
+export class ThinkFilter {
   private buf = "";
   private inThink = false;
   private started = false;
+  /** Início da resposta guardado até saber se é raciocínio ou resposta. */
+  private lead: string | null = "";
 
   push(s: string): string {
+    if (this.lead !== null) {
+      this.lead += s;
+      const close = this.lead.indexOf("</think>");
+      if (close >= 0) {
+        // Raciocínio sem a tag de abertura: descarta tudo até o fechamento.
+        const rest = this.lead.slice(close + "</think>".length);
+        this.lead = null;
+        return this.process(rest);
+      }
+      if (this.lead.trimStart().length < 60) return "";
+      if (THINKING_START.test(this.lead) && !this.lead.includes("<think>")) return "";
+      const all = this.lead;
+      this.lead = null;
+      return this.process(all);
+    }
+    return this.process(s);
+  }
+
+  private process(s: string): string {
     this.buf += s;
     let out = "";
     for (;;) {
@@ -62,6 +87,13 @@ class ThinkFilter {
   }
 
   flush(): string {
+    if (this.lead !== null) {
+      const lead = this.lead;
+      this.lead = null;
+      // Só raciocínio, sem resposta: devolve vazio para o app tentar outro modelo.
+      if (THINKING_START.test(lead)) return "";
+      return this.process(lead) + this.flush();
+    }
     const rest = this.inThink ? "" : this.buf;
     this.buf = "";
     return rest;

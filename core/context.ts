@@ -422,6 +422,10 @@ const MODE_PROMPTS: Record<AiMode, string> = {
   app: `Você é o Assistente do Investa no modo Ajuda com o app. Responda dúvidas sobre como usar o aplicativo Investa, com passos curtos e o nome exato dos botões e telas do guia. Se algo não existir no app, diga que não existe.`,
 };
 
+// Repetida no começo e no fim: alguns modelos tendem a "pensar em voz alta" em inglês.
+const LANGUAGE_RULE =
+  "IDIOMA: responda sempre em português do Brasil, no mesmo idioma do usuário (se ele escrever em outro idioma, use o dele). Nunca escreva o seu raciocínio, rascunho ou análise interna: mostre só a resposta final, já organizada.";
+
 export function systemPrompt(mode: AiMode): string {
-  return `${MODE_PROMPTS[mode]}\n\n${BASE_RULES}`;
+  return `${LANGUAGE_RULE}\n\n${MODE_PROMPTS[mode]}\n\n${BASE_RULES}\n\n${LANGUAGE_RULE}`;
 }
