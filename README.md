@@ -47,6 +47,13 @@ São 30 aulas em 10 módulos, de "o que é investir" até montar uma carteira, i
 
 Em "Minhas contas", informe quanto tem em cada banco: o app mostra a fatura em aberto daquele banco e quanto fica livre de verdade depois de pagá-la. Dinheiro que entra fora do salário, como a venda de um videogame ou um freela, vai em "Recebi dinheiro" e pode ser somado direto ao saldo da conta. Lance os gastos do mês por categoria e cartão, inclusive compras parceladas, e informe quanto veio a fatura de cada banco. Quando as faturas passam da renda, o app avisa, e o botão "Pedir ajuda ao Assistente" monta um plano para pagar sem se endividar, comparando parcelar a fatura, empréstimo e o rotativo com os juros reais do Banco Central. O mês pode ser exportado em PDF ou Excel, com uma análise escrita pelo Assistente se você quiser.
 
+No topo de Gastos, o card **Disponível para gastar** mostra o que sobra de verdade no mês: renda e entradas extras, menos os gastos, as faturas, as contas fixas que ainda vão vencer, os gastos planejados e o que vai para as caixinhas. Também diz quanto dá para gastar por dia até o fim do mês. Compras no crédito de um banco com fatura informada entram pela fatura, sem contar duas vezes.
+
+- **Contas fixas**: aluguel, internet e assinaturas, com aviso 3 dias antes, no dia e quando atrasam, e um botão "Paguei" que lança o gasto.
+- **Gastos que vão vir**: um projeto da faculdade, uma viagem ou um presente. O app mostra quanto guardar por mês até a data, e o Assistente monta um plano com datas que você marca como feito e baixa em PDF.
+- **Caixinhas** (em Objetivos): um valor guardado automaticamente todo mês, num dia fixo, até bater a meta.
+- **Resumo da semana**: card na Início e aviso todo domingo com o que saiu nos últimos 7 dias, a comparação com a semana anterior e o que vence.
+
 Cada meta tem valor e prazo. Com o CDI e o IPCA de hoje, o app projeta quanto você terá no fim do prazo e, se não for suficiente, quanto precisa aplicar por mês. Para a parte aplicada em CDB, LCI ou LCA, também mostra quanto você teria em outros bancos.
 
 <img src="docs/media/gastos.gif" alt="Lançando um notebook de R$ 4.200 em 10 vezes no cartão" width="100%">
@@ -64,11 +71,20 @@ O Assistente conversa em seis modos. Cada um recebe só os dados de que precisa.
 | Vale a pena comprar? | Diz se o preço está bom e se a compra cabe no seu mês |
 | Ajuda com o app | Explica onde fica cada coisa no Investa |
 
-Ele usa os modelos de IA da NVIDIA. No modo Automático (o padrão), o app escolhe o melhor modelo disponível na sua conta e troca sozinho quando sai um melhor ou quando o atual é desativado.
+Ele usa os modelos de IA da NVIDIA. No modo Automático (o padrão), o app mede quanto cada modelo demora e prefere os mais rápidos. Se o primeiro não começar a responder em poucos segundos, um segundo modelo entra na disputa e vale o que responder primeiro; modelos fora do ar ou que respondem vazio são trocados sem você perceber.
+
+- **Memória**: quando você conta seus gostos, hobbies ou planos, o Assistente sugere guardar. Ele usa isso para personalizar as respostas, como numa análise de compra (que também diz se a compra parece impulsiva). Em Configurações → Memória do Assistente dá para ver, editar e apagar.
+- **Voz**: o microfone usa o reconhecimento de voz do Android no celular e a digitação por voz do Windows (Win+H) no PC.
+- **Internet**: com uma chave grátis da Tavily ou da Brave Search, o botão "Internet" faz o Assistente pesquisar antes de responder e listar as fontes.
+- Cada mensagem pode ser apagada, e parar uma pergunta antes da resposta começar devolve o texto para a caixa.
+
+## Meu plano
+
+Cinco perguntas (objetivo, prazo, quanto dá para guardar por mês, mesmo que seja R$ 1, quanto já tem e se prefere um caminho seguro, equilibrado ou de crescimento) geram uma projeção com juros compostos pelo CDI de hoje, com os marcos de R$ 10 mil, R$ 100 mil e assim por diante. Em "Montar meu plano", o Assistente escreve um plano por fases, com hábitos e um checklist com datas, baseado em livros de finanças e, se a pesquisa estiver ligada, em fontes da internet citadas no fim. O plano sai em PDF.
 
 ## Vale a pena?
 
-Cole o link de um produto ou jogo, ou escreva o nome. Para jogos, o app mostra o preço na Steam em reais, o desconto e o menor preço já registrado nas lojas de PC (Steam, Epic e outras). Para outras lojas, lê o preço da página. Em todos os casos, diz se a compra cabe no que sobra do seu mês, já descontando as faturas.
+Cole o link de um produto ou jogo, ou escreva o nome. Para jogos, o app mostra o preço na Steam em reais, o desconto e o menor preço já registrado nas lojas de PC (Steam, Epic e outras). Para outras lojas, lê o preço da página (links curtos como meli.la e amzn.to também funcionam). Quando a loja pede verificação anti-robô, o app avisa e você informa o preço. Em todos os casos, diz se a compra cabe no que sobra do seu mês, já descontando as faturas.
 
 <img src="docs/media/vale-a-pena.png" alt="Consulta de um jogo da Steam com preço, desconto, menor preço histórico e o veredito para o orçamento do mês" width="100%">
 
@@ -318,6 +334,8 @@ Stack: Electron 43, Capacitor 8, React 18, Vite 5, TypeScript 5, Tailwind CSS 3,
 
 ## Limitações
 
+- O Mercado Livre exige login na API e às vezes mostra uma verificação anti-robô na página. Nesses casos o "Vale a pena?" pede o preço à mão.
+- A digitação por voz no PC depende da digitação por voz do Windows (Win+H), que precisa de internet e do idioma português instalado no sistema.
 - O Yahoo Finance não tem API oficial. Se os endpoints mudarem, cotações e gráficos param de funcionar até o código ser ajustado.
 - As taxas dos bancos (percentual do CDI) estão fixas em `shared/banks.ts` e precisam ser atualizadas à mão. Só o CDI usado no cálculo vem do Banco Central.
 - O calendário do Copom está fixo em `core/bcb.ts` e só cobre 2025 e 2026. As reuniões de 2027 precisam ser incluídas antes da virada do ano.
