@@ -266,6 +266,32 @@ export interface UserDataMap {
   bills: Bill[];
   memory: MemoryItem[];
   planned: PlannedExpense[];
+  wealth: WealthState;
+}
+
+export type WealthStyle = "seguro" | "equilibrado" | "crescimento";
+
+/** Respostas do questionário do plano de investimento. */
+export interface WealthAnswers {
+  goal: string;
+  years: number;
+  /** Quanto consegue guardar por mês (pode ser R$ 1). */
+  monthly: number;
+  /** Quanto já tem guardado para começar. */
+  start: number;
+  style: WealthStyle;
+  notes?: string;
+}
+
+export interface WealthPlan extends SavingPlan {
+  sources: { title: string; url: string }[];
+  /** Usou a pesquisa na internet ou só a base do app. */
+  searched: boolean;
+}
+
+export interface WealthState {
+  answers?: WealthAnswers;
+  plan?: WealthPlan;
 }
 
 /** Passo de um plano montado pelo Assistente (vira checklist). */
@@ -336,6 +362,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "bills",
   "memory",
   "planned",
+  "wealth",
 ];
 
 export interface Quote {
@@ -515,6 +542,10 @@ export interface AiConfigInfo {
   baseUrl?: string;
   source?: "app" | "arquivo" | "ambiente" | null;
   catalogUpdatedAt?: string;
+  /** Pesquisa na internet configurada (Tavily ou Brave). */
+  hasSearch?: boolean;
+  searchProvider?: "tavily" | "brave";
+  searchPreview?: string;
 }
 
 export interface AiModelInfo {
@@ -537,6 +568,8 @@ export interface AiChatRequest {
   mode?: AiMode;
   /** Dados extras anexados à pergunta (fatura, compra analisada etc.). */
   attachment?: string;
+  /** Pesquisar na internet antes de responder (se o Dono configurou a pesquisa). */
+  web?: boolean;
 }
 
 export interface AiEvent {

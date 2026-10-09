@@ -23,7 +23,7 @@ import {
   Trash,
 } from "lucide-react";
 import clsx from "clsx";
-import type { FinancialProfile, UserSettings } from "@shared/types";
+import type { AiConfigInfo, FinancialProfile, UserSettings } from "@shared/types";
 import { ROLE_LABEL } from "@shared/types";
 import { api, uid } from "@/lib/api";
 import { brl, relativeTime } from "@/lib/format";
@@ -289,6 +289,70 @@ function PasswordSheet({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
+/** Chave grátis de pesquisa (Tavily ou Brave) para o Assistente buscar na internet. */
+function SearchSettings({ info, onChange }: { info?: AiConfigInfo | null; onChange: () => void }) {
+  const toast = useUi((s) => s.toast);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const k = key.trim();
+    if (!k) return;
+    setBusy(true);
+    try {
+      const n = await api.ai.testSearch(k);
+      await api.ai.setConfig({ searchKey: k });
+      setKey("");
+      onChange();
+      toast({ title: "Pesquisa na internet ligada", message: `Teste trouxe ${n} resultado(s). Vale para todas as contas.`, tone: "success" });
+    } catch (err) {
+      toastError(err, "A chave não funcionou");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-5 pt-5 border-t border-line/10">
+      <div className="font-semibold">Pesquisa na internet</div>
+      <div className="text-[13px] text-muted mt-0.5">
+        A IA da NVIDIA não navega sozinha. Com uma chave grátis da Tavily (1.000 buscas por mês) ou da Brave Search, o Assistente pesquisa e mostra as fontes, inclusive no plano de
+        investimento.
+      </div>
+      {info?.hasSearch && (
+        <div className="mt-2 text-[13px]">
+          <Badge tone="success">Ligada</Badge> <span className="text-muted ml-1">{info.searchProvider === "tavily" ? "Tavily" : "Brave"} · {info.searchPreview}</span>
+        </div>
+      )}
+      <div className="flex flex-col sm:flex-row gap-2 mt-3">
+        <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder="tvly-… (Tavily) ou chave da Brave" type="password" autoComplete="off" />
+        <Button onClick={() => void save()} loading={busy} disabled={!key.trim()}>
+          Testar e salvar
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://app.tavily.com/home")}>
+          Criar chave na Tavily
+        </Button>
+        <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://api-dashboard.search.brave.com/app/keys")}>
+          Criar chave na Brave
+        </Button>
+        {info?.hasSearch && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-danger"
+            onClick={async () => {
+              await api.ai.setConfig({ searchKey: null });
+              onChange();
+            }}
+          >
+            Desligar pesquisa
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AiSettings() {
   const info = useAsync("ai-info", () => api.ai.info(), { staleMs: 2_000 });
   const catalog = useAsync("ai-catalog", () => api.ai.catalog(), { staleMs: 60_000 });
@@ -467,6 +531,7 @@ function AiSettings() {
           )}
         </div>
       </div>
+      <SearchSettings info={info.data} onChange={() => info.reload()} />
       <ConfirmDialog
         open={confirmRemove}
         onClose={() => setConfirmRemove(false)}

@@ -14,6 +14,8 @@ export const INVOKE_CHANNELS = [
   "cloud:sync",
   "plans:expense",
   "plans:export",
+  "plans:wealth",
+  "search:test",
   "data:getAll",
   "data:set",
   "notifications:list",

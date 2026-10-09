@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Brain, ChartLine, Check, CircleHelp, Copy, Trash2, X, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowUp, Brain, Globe, ChartLine, Check, CircleHelp, Copy, Trash2, X, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
 import type { AiEvent, AiMode, ChatMessage } from "@shared/types";
 import { AI_MODES, ASSISTANT_NAME, modeInfo, splitMemory } from "@shared/ai";
@@ -43,7 +43,7 @@ const modeOf = (m: ChatMessage): AiMode => m.mode ?? "mercado";
 
 const ACTION = "h-7 px-2 rounded-lg text-[12px] text-muted hover:text-fg hover:bg-line/10 inline-flex items-center gap-1";
 
-function Message({ m, streaming, onRetry, onDelete }: { m: ChatMessage; streaming?: boolean; onRetry?: () => void; onDelete?: () => void }) {
+function Message({ m, streaming, status, onRetry, onDelete }: { m: ChatMessage; streaming?: boolean; status?: string; onRetry?: () => void; onDelete?: () => void }) {
   const user = useSession((s) => s.user)!;
   const update = useSession((s) => s.update);
   const toast = useUi((s) => s.toast);
@@ -103,7 +103,7 @@ function Message({ m, streaming, onRetry, onDelete }: { m: ChatMessage; streamin
               {[0, 1, 2].map((i) => (
                 <motion.span key={i} className="h-2 w-2 rounded-full bg-primary" animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }} />
               ))}
-              <span className="text-[13px] text-muted ml-2">Pensando…</span>
+              <span className="text-[13px] text-muted ml-2">{status ?? "Pensando…"}</span>
             </div>
           )}
         </div>
@@ -166,6 +166,22 @@ export function Assistente() {
   const [mode, setModeState] = useState<AiMode>(() => (params.get("modo") as AiMode) || savedMode());
   const [input, setInput] = useState("");
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | undefined>();
+  const [web, setWebState] = useState(() => {
+    try {
+      return localStorage.getItem("investa-assistente-web") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const setWeb = (v: boolean) => {
+    setWebState(v);
+    try {
+      localStorage.setItem("investa-assistente-web", v ? "1" : "0");
+    } catch {
+      // armazenamento indisponível
+    }
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const requestRef = useRef<{ requestId: string; messageId: string } | null>(null);
@@ -195,7 +211,10 @@ export function Assistente() {
     return api.on<AiEvent>("ai:event", (ev) => {
       const req = requestRef.current;
       if (!req || ev.requestId !== req.requestId) return;
-      if (ev.type === "context") return;
+      if (ev.type === "context") {
+        if (ev.data?.endsWith("…")) setStatus(ev.data);
+        return;
+      }
       if (ev.type === "chunk" && ev.data) {
         bufferRef.current += ev.data;
         const content = bufferRef.current;
@@ -235,7 +254,8 @@ export function Assistente() {
         .map((x) => ({ role: x.role, content: x.role === "assistant" ? splitMemory(x.content).text : x.content }))
         .slice(-12);
       try {
-        await api.ai.chat(requestId, messages, m, opts.attachment);
+        setStatus(undefined);
+        await api.ai.chat(requestId, messages, m, opts.attachment, web && !!info.data?.hasSearch);
       } catch (err) {
         requestRef.current = null;
         setStreamingId(null);
@@ -243,7 +263,7 @@ export function Assistente() {
         void info.reload();
       }
     },
-    [streamingId, update, scrollDown, info, mode]
+    [streamingId, update, scrollDown, info, mode, web]
   );
 
   // Pergunta vinda de outra tela (?q= ou rascunho com dados anexados).
@@ -391,6 +411,7 @@ export function Assistente() {
                 key={m.id}
                 m={m}
                 streaming={m.id === streamingId}
+                status={m.id === streamingId ? status : undefined}
                 onRetry={m.role === "assistant" && i === chat.length - 1 && !streamingId ? retryLast : undefined}
                 onDelete={streamingId ? undefined : () => update("chat", (list) => list.filter((x) => x.id !== m.id))}
               />
@@ -421,6 +442,18 @@ export function Assistente() {
               placeholder={hasKey ? `Mensagem para o ${ASSISTANT_NAME} (${current.short})` : "O Assistente ainda não foi ativado"}
               className="flex-1 resize-none bg-transparent outline-none text-[15px] py-2 max-h-[180px] placeholder:text-muted/70"
             />
+            {info.data?.hasSearch && (
+              <button
+                type="button"
+                onClick={() => setWeb(!web)}
+                title={web ? "Pesquisa na internet ligada" : "Pesquisar na internet antes de responder"}
+                aria-pressed={web}
+                className={clsx("h-10 px-2.5 rounded-xl inline-flex items-center gap-1.5 text-[12.5px] font-medium transition shrink-0", web ? "bg-primary/15 text-primary" : "text-muted hover:text-fg hover:bg-line/10")}
+              >
+                <Globe size={17} />
+                <span className="hidden sm:inline">Internet</span>
+              </button>
+            )}
             <AnimatePresence mode="wait" initial={false}>
               {streamingId ? (
                 <motion.div key="stop" initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}>

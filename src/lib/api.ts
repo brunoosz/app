@@ -1,5 +1,7 @@
 import type {
   SavingPlan,
+  WealthAnswers,
+  WealthPlan,
   AiCatalog,
   AiConfigInfo,
   AiMode,
@@ -121,11 +123,12 @@ export const api = {
 
   ai: {
     info: () => call<AiConfigInfo>("ai:info"),
-    setConfig: (patch: { apiKey?: string | null; model?: string; baseUrl?: string }) => call<AiConfigInfo>("ai:setConfig", patch),
+    setConfig: (patch: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }) => call<AiConfigInfo>("ai:setConfig", patch),
     catalog: (force = false) => call<AiCatalog>("ai:catalog", { force }),
     test: () => call<string>("ai:test"),
-    chat: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], mode: AiMode, attachment?: string) =>
-      call<boolean>("ai:chat", { requestId, messages, mode, attachment }),
+    chat: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], mode: AiMode, attachment?: string, web?: boolean) =>
+      call<boolean>("ai:chat", { requestId, messages, mode, attachment, web }),
+    testSearch: (key: string) => call<number>("search:test", { key }),
     cancel: (requestId: string) => call<boolean>("ai:cancel", { requestId }),
   },
 
@@ -133,6 +136,7 @@ export const api = {
   plans: {
     forExpense: (id: string) => call<SavingPlan>("plans:expense", { id }),
     exportPdf: (title: string, markdown: string, subtitle?: string) => call<{ path: string } | null>("plans:export", { title, markdown, subtitle }),
+    wealth: (answers: WealthAnswers) => call<WealthPlan>("plans:wealth", { answers }),
   },
   deals: {
     check: (query: string, price?: number) => call<DealCheck>("deals:check", { query, price }),

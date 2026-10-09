@@ -16,6 +16,7 @@ import { Aula } from "@/pages/Aula";
 import { Assistente } from "@/pages/Assistente";
 import { Simulador } from "@/pages/Simulador";
 import { Objetivos } from "@/pages/Objetivos";
+import { Plano } from "@/pages/Plano";
 import { Gastos } from "@/pages/Gastos";
 import { ValeAPena } from "@/pages/ValeAPena";
 import { Bancos } from "@/pages/Bancos";
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="aulas" element={<Aulas />} />
             <Route path="assistente" element={<Assistente />} />
             <Route path="simulador" element={<Simulador />} />
+            <Route path="plano" element={<Plano />} />
             <Route path="objetivos" element={<Objetivos />} />
             <Route path="gastos" element={<Gastos />} />
             <Route path="vale-a-pena" element={<ValeAPena />} />

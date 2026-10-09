@@ -7,6 +7,7 @@ import {
   House,
   Landmark,
   Receipt,
+  Rocket,
   Settings,
   Sparkles,
   Target,
@@ -35,6 +36,7 @@ export const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
   {
     title: "Planejamento",
     items: [
+      { to: "/plano", label: "Meu plano", icon: Rocket },
       { to: "/objetivos", label: "Objetivos", icon: Target },
       { to: "/gastos", label: "Gastos", icon: Receipt },
       { to: "/vale-a-pena", label: "Vale a pena?", icon: BadgePercent },

@@ -401,8 +401,8 @@ export class CloudService {
 
   // ---- configuração da IA (uma para todas as contas) ----
 
-  async pullAi(userId: string, force = false): Promise<{ apiKey?: string; model?: string; baseUrl?: string } | null> {
-    const rows = await this.request<{ ai: { apiKey?: string; model?: string; baseUrl?: string }; updated_at: string }[]>("/rest/v1/app_settings?id=eq.1&select=ai,updated_at", {
+  async pullAi(userId: string, force = false): Promise<{ apiKey?: string; model?: string; baseUrl?: string; searchKey?: string | null } | null> {
+    const rows = await this.request<{ ai: { apiKey?: string; model?: string; baseUrl?: string; searchKey?: string | null }; updated_at: string }[]>("/rest/v1/app_settings?id=eq.1&select=ai,updated_at", {
       token: await this.token(userId),
     });
     const row = rows[0];
@@ -412,7 +412,7 @@ export class CloudService {
     return row.ai ?? {};
   }
 
-  async pushAi(userId: string, ai: { apiKey?: string | null; model?: string; baseUrl?: string }): Promise<void> {
+  async pushAi(userId: string, ai: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }): Promise<void> {
     const rows = await this.request<{ updated_at: string }[]>("/rest/v1/app_settings?id=eq.1", {
       method: "PATCH",
       token: await this.token(userId),

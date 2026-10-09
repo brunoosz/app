@@ -42,6 +42,9 @@ export interface AiStoredConfig {
   cooldown?: Record<string, number>;
   /** Tempo médio (ms) até a primeira palavra de cada modelo, para preferir os rápidos. */
   latency?: Record<string, number>;
+  /** Chave da pesquisa na internet (Tavily "tvly-…" ou Brave). */
+  searchKeyEnc?: string;
+  searchKeyMode?: "safe" | "plain";
 }
 
 interface DBShape {

@@ -1,8 +1,8 @@
 // Todos os canais que a interface chama (window.investa.invoke). O Electron e
 // o app do celular criam este backend com o adaptador da sua plataforma.
-import type { AiChatRequest, AiMode, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
+import type { AiChatRequest, AiMode, WealthAnswers, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { USER_DATA_KEYS } from "@shared/types";
-import { pendingFor, currentYm, monthBudget, monthsUntil, parsePlanSteps, summarizeMonth } from "@shared/finance";
+import { pendingFor, currentYm, monthBudget, monthsUntil, parsePlanSteps, ratesFromIndicators, summarizeMonth, wealthProjection, wealthRate } from "@shared/finance";
 import { modeInfo } from "@shared/ai";
 import type { Platform } from "./platform";
 import { Store } from "./store";
@@ -21,6 +21,7 @@ import { buildDocHtml, buildDocPdf, buildExcel, buildPdf, buildReportHtml, type 
 import { checkDeal, dealToText } from "./deals";
 import { modelLabel } from "./models";
 import { CloudService } from "./cloud";
+import { BOOK_PRINCIPLES, resultsToContext, webSearch, type SearchResult } from "./search";
 
 const VALID_RANGES: ChartRange[] = ["1D", "5D", "1M", "6M", "1A", "5A", "MAX"];
 const MODES: AiMode[] = ["geral", "professor", "app", "financas", "mercado", "compras"];
@@ -115,13 +116,14 @@ export class Backend {
     const r = this.ai.resolve();
     const cloudHasKey = !!ai?.apiKey;
     if (!cloudHasKey && r.key && r.source === "app" && this.isOwner(userId) && ai !== null) {
-      await this.cloud.pushAi(userId, { apiKey: r.key, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "" });
+      await this.cloud.pushAi(userId, { apiKey: r.key, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "", searchKey: this.ai.searchKey() });
     }
   }
 
-  private applyCloudAi(ai: { apiKey?: string | null; model?: string; baseUrl?: string }): void {
+  private applyCloudAi(ai: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }): void {
     const r = this.ai.resolve();
-    const patch: { apiKey?: string | null; model?: string; baseUrl?: string } = {};
+    const patch: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null } = {};
+    if (ai.searchKey !== undefined && (ai.searchKey || null) !== this.ai.searchKey()) patch.searchKey = ai.searchKey || null;
     if (ai.apiKey !== undefined && (ai.apiKey || null) !== (r.source === "app" ? r.key : null)) patch.apiKey = ai.apiKey || null;
     if (ai.model !== undefined && ai.model !== r.choice) patch.model = ai.model;
     if (ai.baseUrl !== undefined && (ai.baseUrl || undefined) !== (this.store.app.ai?.baseUrl || undefined)) patch.baseUrl = ai.baseUrl ?? "";
@@ -261,7 +263,7 @@ export class Backend {
       question,
       mode,
     });
-    const extra = attachment ? `\n\n${attachment.slice(0, 6000)}` : "";
+    const extra = attachment ? `\n\n${attachment.slice(0, 12000)}` : "";
     return [{ role: "system" as const, content: `${systemPrompt(mode)}\n\n=== DADOS EM TEMPO REAL ===\n${context}${extra}` }, ...messages];
   }
 
@@ -459,14 +461,14 @@ export class Backend {
 
     // ---- inteligência artificial ----
     this.on("ai:info", () => this.ai.info(this.isOwner()));
-    this.on("ai:setConfig", (a: { apiKey?: string | null; model?: string; baseUrl?: string }) => {
+    this.on("ai:setConfig", (a: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }) => {
       this.requireOwner();
       this.ai.setConfig(a);
       if (this.cloud.enabled) {
         // A chave vale para todas as contas, em qualquer aparelho.
         const r = this.ai.resolve();
         void this.cloud
-          .pushAi(this.uid(), { apiKey: r.source === "app" ? r.key : null, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "" })
+          .pushAi(this.uid(), { apiKey: r.source === "app" ? r.key : null, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "", searchKey: this.ai.searchKey() })
           .catch(() => undefined);
       }
       return this.ai.info(true);
@@ -493,7 +495,16 @@ export class Backend {
           if (!this.ai.info(true).hasKey) {
             throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. Coloque a chave da NVIDIA em Configurações → Inteligência Artificial.");
           }
-          const full = await this.aiMessages(userId, mode, messages, a.attachment);
+          let attachment = a.attachment;
+          const searchKey = a.web ? this.ai.searchKey() : null;
+          if (searchKey) {
+            p.emit("ai:event", { requestId: a.requestId, type: "context", data: "Pesquisando na internet…" });
+            const q = messages.filter((m) => m.role === "user").pop()?.content ?? "";
+            const results = await webSearch(searchKey, q.slice(0, 300), 5).catch(() => [] as SearchResult[]);
+            const ctx = resultsToContext(results);
+            if (ctx) attachment = `${attachment ?? ""}\n\n${ctx}\n\nNo fim da resposta, liste as fontes usadas como links Markdown.`;
+          }
+          const full = await this.aiMessages(userId, mode, messages, attachment);
           if (controller.signal.aborted) return;
           p.emit("ai:event", { requestId: a.requestId, type: "context", data: modeInfo(mode).label });
           await this.ai.stream(full, (delta) => p.emit("ai:event", { requestId: a.requestId, type: "chunk", data: delta }), controller.signal);
@@ -571,6 +582,67 @@ Máximo de 350 palavras.`;
       }
       return { createdAt: new Date().toISOString(), text, steps: parsePlanSteps(text) };
     });
+    // ---- plano de investimento e de riqueza ----
+    this.on("plans:wealth", async (a: { answers: WealthAnswers }) => {
+      const userId = this.uid();
+      const ans = a.answers;
+      const style = (["seguro", "equilibrado", "crescimento"] as const).includes(ans?.style) ? ans.style : "equilibrado";
+      const years = Math.min(50, Math.max(1, Number(ans?.years) || 10));
+      const monthly = Math.max(0, Number(ans?.monthly) || 0);
+      const start = Math.max(0, Number(ans?.start) || 0);
+      const goal = String(ans?.goal ?? "").slice(0, 300) || "construir patrimônio";
+      const ind = await getIndicators().catch(() => undefined);
+      const rate = wealthRate(style, ratesFromIndicators(ind).cdi);
+      const proj = wealthProjection(start, monthly, rate, years);
+      const end = proj.points[proj.points.length - 1];
+      const money = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      const marks = proj.milestones.map((m) => `${money(m.value)} em ~${m.month} meses`).join("; ");
+
+      // Pesquisa na internet (se o Dono configurou a chave); sem chave, usa só a base de livros.
+      let results: SearchResult[] = [];
+      const key = this.ai.searchKey();
+      if (key) {
+        const styleWord = style === "seguro" ? "conservador renda fixa" : style === "equilibrado" ? "moderado diversificado" : "longo prazo ações e fundos imobiliários";
+        const queries = [
+          `plano para enriquecer investindo ${money(monthly)} por mês ${styleWord} passo a passo Brasil`,
+          `como investir com pouco dinheiro começando do zero ${goal}`,
+          `estratégias de milionários e livros de finanças para ${goal} investidor ${styleWord}`,
+        ];
+        const all = await Promise.all(queries.map((q) => webSearch(key, q, 4).catch(() => [] as SearchResult[])));
+        const seen = new Set<string>();
+        results = all.flat().filter((r) => !seen.has(r.url) && seen.add(r.url)).slice(0, 8);
+      }
+      const ask = `Monte meu PLANO DE INVESTIMENTO E DE RIQUEZA personalizado.
+Objetivo: ${goal}. Prazo: ${years} anos. Consigo guardar ${money(monthly)} por mês (começar pequeno é o que importa). Já tenho ${money(start)} guardados. Estilo: ${style}.${ans?.notes ? ` Observações: ${String(ans.notes).slice(0, 300)}.` : ""}
+Projeção calculada pelo app (juros compostos a ~${rate.toFixed(1).replace(".", ",")}% a.a., estimativa, não garantia): em ${years} anos ≈ ${money(end.value)} (investido ${money(end.invested)}). Marcos: ${marks || "nenhum marco no período"}.
+Use meus dados reais (renda, disponível do mês, faturas, contas fixas, reserva, perfil), os princípios dos livros abaixo${results.length ? " e os resultados da pesquisa na internet (cite [1], [2]…)" : ""}.
+Estrutura:
+## Onde você está — 2 a 3 frases com números.
+## Estratégia — por que esse caminho combina com o estilo "${style}" e com o objetivo.
+## Fases — 1) organizar e montar a reserva de emergência; 2) primeiros investimentos (mesmo com centavos ou R$ 1: Tesouro Selic, CDB com liquidez diária e garantia do FGC); 3) diversificar conforme o estilo; 4) acelerar (aumentar a renda e os aportes). Para cada fase: o que fazer, onde investir, quanto, e até quando.
+## Marcos — tabela com data aproximada e valor.
+## Hábitos — 5 hábitos dos livros aplicados à minha realidade.
+## Checklist — uma linha por passo, exatamente no formato "- [ ] DD/MM/AAAA: ação com valor", dos próximos 12 meses.
+${results.length ? "## Fontes — liste as fontes da internet que você usou, com o número e o link." : ""}
+Seja realista, não prometa rentabilidade e não indique ativos específicos de risco como certeza. Máximo de 700 palavras.
+
+${BOOK_PRINCIPLES}
+
+${resultsToContext(results)}`;
+      let text: string;
+      try {
+        text = await this.ai.complete(await this.aiMessages(userId, "financas", [{ role: "user", content: ask }]), undefined, 3000);
+      } catch (err) {
+        throw new AppError("AI_ERROR", this.aiError(err));
+      }
+      return { createdAt: new Date().toISOString(), text, steps: parsePlanSteps(text), sources: results.map((r) => ({ title: r.title, url: r.url })), searched: results.length > 0 };
+    });
+    this.on("search:test", async (a: { key: string }) => {
+      this.requireOwner();
+      const results = await webSearch(String(a.key ?? ""), "como começar a investir com pouco dinheiro", 2);
+      return results.length;
+    });
+
     this.on("plans:export", async (a: { title: string; subtitle?: string; markdown: string; fileName?: string }) => {
       const title = String(a.title ?? "Plano").slice(0, 120);
       const subtitle = String(a.subtitle ?? `Gerado em ${new Date().toLocaleDateString("pt-BR")}`).slice(0, 200);

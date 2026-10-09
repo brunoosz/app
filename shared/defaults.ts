@@ -47,5 +47,6 @@ export function defaultUserData(): UserDataMap {
     bills: [],
     memory: [],
     planned: [],
+    wealth: {},
   };
 }

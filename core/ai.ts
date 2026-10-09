@@ -3,6 +3,7 @@ import type { Store } from "./store";
 import type { Platform } from "./platform";
 import { AppError } from "./auth";
 import { fetchStream, fetchWithTimeout, isBufferedStream } from "./http";
+import { searchProvider } from "./search";
 import { describeModels, FALLBACK_MODEL, FALLBACK_MODELS, modelLabel, pickBest } from "./models";
 
 export const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
@@ -162,9 +163,21 @@ export class AiService {
     return { key, choice, model, baseUrl, source };
   }
 
+  /** Chave da pesquisa na internet, se o Dono configurou. */
+  searchKey(): string | null {
+    const s = this.stored;
+    if (!s.searchKeyEnc) return null;
+    try {
+      return this.platform.secrets.decrypt(s.searchKeyEnc, s.searchKeyMode ?? "plain");
+    } catch {
+      return null;
+    }
+  }
+
   info(canManage: boolean): AiConfigInfo {
     const r = this.resolve();
-    if (!canManage) return { hasKey: !!r.key, canManage };
+    const search = this.searchKey();
+    if (!canManage) return { hasKey: !!r.key, canManage, hasSearch: !!search };
     return {
       hasKey: !!r.key,
       canManage,
@@ -175,10 +188,13 @@ export class AiService {
       baseUrl: r.baseUrl,
       source: r.source,
       catalogUpdatedAt: this.stored.catalog?.updatedAt,
+      hasSearch: !!search,
+      searchProvider: search ? searchProvider(search) : undefined,
+      searchPreview: search ? `${search.slice(0, 5)}••••${search.slice(-4)}` : undefined,
     };
   }
 
-  setConfig(patch: { apiKey?: string | null; model?: string; baseUrl?: string }): void {
+  setConfig(patch: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }): void {
     const current = { ...this.stored };
     if (patch.apiKey === null || patch.apiKey === "") {
       delete current.apiKeyEnc;
@@ -190,6 +206,14 @@ export class AiService {
       // Chave nova: a lista de modelos pode ser outra.
       delete current.catalog;
       delete current.retired;
+    }
+    if (patch.searchKey === null || patch.searchKey === "") {
+      delete current.searchKeyEnc;
+      delete current.searchKeyMode;
+    } else if (patch.searchKey) {
+      const { data, mode } = this.platform.secrets.encrypt(patch.searchKey.trim());
+      current.searchKeyEnc = data;
+      current.searchKeyMode = mode;
     }
     if (patch.model !== undefined) current.model = patch.model.trim() || "auto";
     if (patch.baseUrl !== undefined) current.baseUrl = patch.baseUrl.trim() || undefined;
