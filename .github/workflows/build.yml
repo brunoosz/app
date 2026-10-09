@@ -83,13 +83,61 @@ jobs:
           body: |
             ## Como instalar
 
-            - **Investa-Setup-${{ env.VERSION }}.exe** — instalador (recomendado). Cria atalho na área de trabalho e no menu Iniciar.
-            - **Investa-Portatil-${{ env.VERSION }}.exe** — versão portátil, roda sem instalar.
+            **Windows**
+            - **Investa-Setup-${{ env.VERSION }}.exe**: instalador (recomendado). Cria atalho na área de trabalho e no menu Iniciar.
+            - **Investa-Portatil-${{ env.VERSION }}.exe**: versão portátil, roda sem instalar.
 
             Na primeira vez, o Windows pode mostrar "O Windows protegeu o computador" (o app ainda não tem certificado de assinatura). Clique em **Mais informações → Executar assim mesmo**.
+
+            **Android**
+            - **Investa-Android-${{ env.VERSION }}.apk**: baixe pelo celular e abra o arquivo. Se o Android pedir, permita "instalar apps desta fonte" para o navegador ou o gerenciador de arquivos. As próximas versões instalam por cima, sem perder os dados.
 
             ## Primeiro acesso
 
             1. Crie a primeira conta: ela será a conta **Dono**.
             2. Responda o questionário (renda, gastos, quanto pode investir, perfil).
-            3. Para ativar o Professor IA: **Configurações → Inteligência Artificial** e cole sua chave da NVIDIA (`nvapi-...`).
+            3. Para ativar o Assistente: **Configurações → Inteligência Artificial** e cole sua chave da NVIDIA (`nvapi-...`). No celular, a chave é configurada separadamente.
+
+  android:
+    name: App Android (.apk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Publica na mesma release criada pelo job do Windows.
+    needs: windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - name: Definir versão
+        run: |
+          echo "VERSION=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
+      - run: npm run typecheck
+      - run: npx vite build
+      - run: npx cap sync android
+      - name: Gerar APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Renomear APK
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/release/app-release.apk "release/Investa-Android-${VERSION}.apk"
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Investa-Android-${{ env.VERSION }}
+          path: release/*.apk
+      - name: Publicar na página de Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          files: release/*.apk

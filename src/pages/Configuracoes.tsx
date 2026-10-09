@@ -14,32 +14,27 @@ import {
   Monitor,
   Palette,
   PiggyBank,
+  RefreshCw,
   Sparkles,
   Sun,
   UserRound,
   Wallet,
 } from "lucide-react";
+import clsx from "clsx";
 import type { FinancialProfile, UserSettings } from "@shared/types";
 import { ROLE_LABEL } from "@shared/types";
 import { api } from "@/lib/api";
-import { brl } from "@/lib/format";
-import { isManager, useSession, useUserData } from "@/store/session";
+import { brl, relativeTime } from "@/lib/format";
+import { isOwner, useSession, useUserData } from "@/store/session";
 import { toastError, useUi } from "@/store/ui";
 import { useAsync } from "@/hooks/useAsync";
 import { Avatar, Badge, Card, ListGroup, ListRow, PageHeader } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/Button";
-import { Field, Input, PasswordInput, SegmentedControl, Select, Toggle } from "@/components/ui/form";
+import { Field, Input, PasswordInput, SegmentedControl, Toggle } from "@/components/ui/form";
 import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { ExpenseFields, IncomeFields, InvestFields, ProfileFields, RISK_LABEL, totalExpenses, totalIncome } from "@/components/ProfileForm";
 import { ErrorBanner } from "@/pages/auth/Login";
 
-const RECOMMENDED_MODELS = [
-  { id: "meta/llama-4-maverick-17b-128e-instruct", label: "Llama 4 Maverick (recomendado)" },
-  { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B (raciocínio mais profundo)" },
-  { id: "nvidia/llama-3.3-nemotron-super-49b-v1", label: "Nemotron Super 49B (NVIDIA)" },
-  { id: "meta/llama-3.1-405b-instruct", label: "Llama 3.1 405B (muito grande, mais lento)" },
-  { id: "deepseek-ai/deepseek-r1", label: "DeepSeek R1 (raciocínio)" },
-];
 
 function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
@@ -125,7 +120,7 @@ function FinanceSheet({ open, onClose }: { open: boolean; onClose: () => void })
       onClose={onClose}
       width="lg"
       title="Dados financeiros"
-      subtitle="Ganhou aumento? Mudou de emprego? Atualize aqui — o Professor IA e as metas usam essas informações."
+      subtitle="Ganhou aumento? Mudou de emprego? Atualize aqui — o Assistente e as metas usam essas informações."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -231,24 +226,33 @@ function PasswordSheet({ open, onClose }: { open: boolean; onClose: () => void }
 
 function AiSettings() {
   const info = useAsync("ai-info", () => api.ai.info(), { staleMs: 2_000 });
+  const catalog = useAsync("ai-catalog", () => api.ai.catalog(), { staleMs: 60_000 });
   const toast = useUi((s) => s.toast);
   const [key, setKey] = useState("");
-  const [model, setModel] = useState("");
-  const [models, setModels] = useState<string[] | null>(null);
+  const [choice, setChoice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [loadingModels, setLoadingModels] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
-  useEffect(() => {
-    if (info.data && !model) setModel(info.data.model);
-  }, [info.data, model]);
+  const selected = choice ?? info.data?.choice ?? "auto";
+  const models = catalog.data?.models ?? [];
+  const best = models.find((m) => m.id === catalog.data?.best);
+  const visible = showAll ? models : models.slice(0, 10);
+  if (selected !== "auto" && !visible.some((m) => m.id === selected)) {
+    const extra = models.find((m) => m.id === selected);
+    if (extra) visible.push(extra);
+  }
 
-  const save = async () => {
+  const save = async (patch?: { model?: string }) => {
     setSaving(true);
     try {
-      await api.ai.setConfig({ apiKey: key.trim() || undefined, model });
-      setKey("");
+      await api.ai.setConfig({ apiKey: key.trim() || undefined, model: patch?.model ?? selected });
+      if (key.trim()) {
+        setKey("");
+        await catalog.reload();
+      }
       info.reload();
       toast({ title: "Configuração da IA salva", tone: "success" });
     } catch (err) {
@@ -261,11 +265,12 @@ function AiSettings() {
   const test = async () => {
     setTesting(true);
     try {
-      if (key.trim()) await api.ai.setConfig({ apiKey: key.trim(), model });
+      if (key.trim()) await api.ai.setConfig({ apiKey: key.trim(), model: selected });
       setKey("");
       const r = await api.ai.test();
       info.reload();
-      toast({ title: "IA conectada!", message: `Resposta do modelo: “${r.slice(0, 80)}”`, tone: "success" });
+      void catalog.reload();
+      toast({ title: "IA conectada", message: r.slice(0, 120), tone: "success" });
     } catch (err) {
       toastError(err, "Falha ao conectar");
     } finally {
@@ -273,18 +278,39 @@ function AiSettings() {
     }
   };
 
-  const loadModels = async () => {
-    setLoadingModels(true);
+  const refresh = async () => {
+    setRefreshing(true);
     try {
-      setModels(await api.ai.models());
+      await api.ai.catalog(true);
+      await catalog.reload();
+      info.reload();
+      toast({ title: "Lista de modelos atualizada", tone: "success" });
     } catch (err) {
       toastError(err);
     } finally {
-      setLoadingModels(false);
+      setRefreshing(false);
     }
   };
 
-  const options = [...RECOMMENDED_MODELS.map((m) => m.id), ...(models ?? [])].filter((v, i, a) => a.indexOf(v) === i);
+  const row = (id: string, title: React.ReactNode, sub: React.ReactNode, badge?: React.ReactNode) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => setChoice(id)}
+      className={clsx(
+        "w-full text-left flex items-center gap-3 rounded-2xl border px-4 py-3 transition",
+        selected === id ? "border-primary/60 bg-primary/[0.07]" : "border-line/10 hover:border-primary/30 hover:bg-line/[0.04]"
+      )}
+    >
+      <span className={clsx("h-4 w-4 rounded-full border-2 shrink-0", selected === id ? "border-primary bg-primary shadow-[inset_0_0_0_3px_rgb(var(--surface))]" : "border-line/30")} />
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2 flex-wrap font-medium text-[14.5px]">
+          {title} {badge}
+        </span>
+        <span className="block text-[12.5px] text-muted truncate">{sub}</span>
+      </span>
+    </button>
+  );
 
   return (
     <Card>
@@ -297,38 +323,65 @@ function AiSettings() {
             <div className="font-semibold text-[16px]">Inteligência Artificial (NVIDIA)</div>
             {info.data?.hasKey ? (
               <Badge tone="success" icon={CircleCheck}>
-                Configurada {info.data.source === "arquivo" ? "(arquivo config.json)" : info.data.source === "ambiente" ? "(variável de ambiente)" : ""}
+                Conectada {info.data.source === "arquivo" ? "(arquivo config.json)" : info.data.source === "ambiente" ? "(variável de ambiente)" : ""}
               </Badge>
             ) : (
               <Badge tone="warning">Não configurada</Badge>
             )}
           </div>
           <p className="text-[13.5px] text-muted mt-1">
-            Cole sua chave da API da NVIDIA (começa com <code className="text-fg">nvapi-</code>). Ela fica guardada criptografada neste computador e vale para todos os usuários do app.
+            Só você, como Dono, vê esta seção. A chave fica guardada criptografada neste aparelho e vale para todas as contas do app. Os outros usuários só veem o Assistente funcionando.
           </p>
         </div>
       </div>
       <div className="mt-5 space-y-4">
-        <Field label="Chave da API" hint={info.data?.keyPreview ? `Chave atual: ${info.data.keyPreview}` : undefined}>
+        <Field label="Chave da API" hint={info.data?.keyPreview ? `Chave atual: ${info.data.keyPreview}` : "Começa com nvapi-"}>
           <PasswordInput icon={KeyRound} value={key} onChange={(e) => setKey(e.target.value)} placeholder={info.data?.hasKey ? "Deixe em branco para manter a chave atual" : "nvapi-..."} />
         </Field>
-        <Field label="Modelo">
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <Select value={model} onChange={(e) => setModel(e.target.value)}>
-                {options.map((id) => (
-                  <option key={id} value={id}>
-                    {RECOMMENDED_MODELS.find((m) => m.id === id)?.label ?? id}
-                  </option>
-                ))}
-                {model && !options.includes(model) && <option value={model}>{model}</option>}
-              </Select>
-            </div>
-            <Button variant="secondary" loading={loadingModels} disabled={!info.data?.hasKey} onClick={() => void loadModels()}>
-              Carregar lista
+
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="label !mb-0">Modelo</div>
+            <Button size="sm" variant="ghost" icon={RefreshCw} loading={refreshing} disabled={!info.data?.hasKey} onClick={() => void refresh()}>
+              Atualizar lista
             </Button>
           </div>
-        </Field>
+          <div className="space-y-2">
+            {row(
+              "auto",
+              "Automático",
+              best ? `Usa sempre o melhor modelo disponível para o Investa. Agora: ${best.label} (${best.publisher}).` : "Usa sempre o melhor modelo disponível para o Investa.",
+              <Badge tone="primary">Recomendado</Badge>
+            )}
+            {visible.map((m) =>
+              row(
+                m.id,
+                m.label,
+                `${m.publisher} · ${m.id}`,
+                <>
+                  {m.id === best?.id && <Badge tone="success">Melhor agora</Badge>}
+                  {m.tags.map((t) => (
+                    <Badge key={t}>{t}</Badge>
+                  ))}
+                </>
+              )
+            )}
+          </div>
+          {models.length > 10 && (
+            <button type="button" className="text-[13px] text-primary font-medium mt-2" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "Mostrar só os melhores" : `Mostrar todos os ${models.length} modelos`}
+            </button>
+          )}
+          <div className="text-[12px] text-muted mt-2">
+            {catalog.data?.updatedAt
+              ? `Lista da sua conta NVIDIA, atualizada ${relativeTime(catalog.data.updatedAt)}. O app confere de novo todo dia.`
+              : info.data?.hasKey
+                ? "A lista aparece depois da primeira conexão."
+                : "Coloque a chave para ver os modelos disponíveis na sua conta."}{" "}
+            Se o modelo escolhido sair do ar, o app troca sozinho pelo melhor disponível e avisa você.
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => void save()} loading={saving}>
             Salvar
@@ -336,17 +389,17 @@ function AiSettings() {
           <Button variant="secondary" icon={Sparkles} loading={testing} disabled={!info.data?.hasKey && !key.trim()} onClick={() => void test()}>
             Testar conexão
           </Button>
+          <Button variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://build.nvidia.com/models")}>
+            Ver modelos na NVIDIA
+          </Button>
           <Button variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://build.nvidia.com/settings/api-keys")}>
-            Gerar chave na NVIDIA
+            Gerar chave
           </Button>
           {info.data?.source === "app" && (
             <Button variant="ghost" className="text-danger" onClick={() => setConfirmRemove(true)}>
               Remover chave
             </Button>
           )}
-        </div>
-        <div className="rounded-2xl bg-line/[0.04] px-4 py-3 text-[12.5px] text-muted">
-          Alternativa: crie um arquivo <code className="text-fg">config.json</code> com <code className="text-fg">{'{ "nvidiaApiKey": "nvapi-..." }'}</code> na pasta de dados do Investa (veja em Sobre) ou ao lado do .exe.
         </div>
       </div>
       <ConfirmDialog
@@ -358,7 +411,7 @@ function AiSettings() {
           info.reload();
         }}
         title="Remover chave da IA?"
-        message="O Professor IA deixará de funcionar até uma nova chave ser configurada."
+        message="O Assistente deixará de funcionar até uma nova chave ser configurada."
         confirmLabel="Remover"
         danger
       />
@@ -412,7 +465,7 @@ export function Configuracoes() {
           <ListGroup>
             <ListRow icon={Wallet} iconColor="#34D399" title="Renda mensal" subtitle={`${brl(profile.salary)} de salário${profile.extraIncome ? ` + ${brl(profile.extraIncome)} extra` : ""}`} right={<span className="font-semibold tabular">{brl(totalIncome(profile))}</span>} onClick={() => setSheet("financeiro")} chevron />
             <ListRow icon={PiggyBank} iconColor="#FBBF24" title="Gastos e investimentos" subtitle={`Gasta ${brl(totalExpenses(profile))} · investe ${brl(profile.monthlyInvest)} por mês`} onClick={() => setSheet("financeiro")} chevron />
-            <ListRow icon={UserRound} iconColor="#A78BFA" title="Perfil de investidor" subtitle="Usado pelo Professor IA para personalizar sugestões" right={<Badge tone="secondary">{RISK_LABEL[profile.riskProfile]}</Badge>} onClick={() => setSheet("financeiro")} chevron />
+            <ListRow icon={UserRound} iconColor="#A78BFA" title="Perfil de investidor" subtitle="Usado pelo Assistente para personalizar sugestões" right={<Badge tone="secondary">{RISK_LABEL[profile.riskProfile]}</Badge>} onClick={() => setSheet("financeiro")} chevron />
           </ListGroup>
         </Section>
 
@@ -457,7 +510,7 @@ export function Configuracoes() {
           </button>
         </Section>
 
-        {isManager(user) && (
+        {isOwner(user) && (
           <Section title="Inteligência Artificial" id="ia">
             <div ref={aiRef}>
               <AiSettings />

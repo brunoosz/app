@@ -42,5 +42,6 @@ export function defaultUserData(): UserDataMap {
     learning: { xp: 0, completed: {}, streak: { count: 0, lastDate: "" }, badges: [] },
     simulator: { cash: SIMULATOR_START_CASH, startedAt: now, positions: [], history: [] },
     chat: [],
+    invoices: [],
   };
 }

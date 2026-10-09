@@ -1,5 +1,8 @@
 import type {
+  AiCatalog,
   AiConfigInfo,
+  AiMode,
+  DealCheck,
   AiEvent,
   AlertRuntimeState,
   ApiResult,
@@ -57,6 +60,7 @@ async function call<T>(channel: InvokeChannel, args?: unknown): Promise<T> {
 export interface AppInfo {
   version: string;
   platform: string;
+  kind: "desktop" | "mobile";
   hasUsers: boolean;
   dataDir: string;
 }
@@ -115,13 +119,18 @@ export const api = {
   ai: {
     info: () => call<AiConfigInfo>("ai:info"),
     setConfig: (patch: { apiKey?: string | null; model?: string; baseUrl?: string }) => call<AiConfigInfo>("ai:setConfig", patch),
-    models: () => call<string[]>("ai:models"),
+    catalog: (force = false) => call<AiCatalog>("ai:catalog", { force }),
     test: () => call<string>("ai:test"),
-    chat: (requestId: string, messages: { role: "user" | "assistant"; content: string }[]) => call<boolean>("ai:chat", { requestId, messages }),
+    chat: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], mode: AiMode, attachment?: string) =>
+      call<boolean>("ai:chat", { requestId, messages, mode, attachment }),
     cancel: (requestId: string) => call<boolean>("ai:cancel", { requestId }),
   },
 
-  exportReport: (ym: string, format: "pdf" | "xlsx") => call<{ path: string } | null>("reports:export", { ym, format }),
+  exportReport: (ym: string, format: "pdf" | "xlsx", withAi = false) => call<{ path: string } | null>("reports:export", { ym, format, withAi }),
+  deals: {
+    check: (query: string, price?: number) => call<DealCheck>("deals:check", { query, price }),
+    context: (deal: DealCheck, installments?: number) => call<string>("deals:context", { deal, installments }),
+  },
   setTheme: (theme: "dark" | "light") => call<boolean>("window:setTheme", { theme }),
   openExternal: (url: string) => call<boolean>("shell:openExternal", { url }),
 

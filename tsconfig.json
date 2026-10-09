@@ -20,7 +20,8 @@
     "paths": {
       "@/*": ["src/*"],
       "@shared/*": ["shared/*"]
-    }
+    },
+    "types": []
   },
-  "include": ["src", "shared"]
+  "include": ["src", "shared", "core"]
 }

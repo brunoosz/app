@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Briefcase,
   Bus,
@@ -16,6 +17,7 @@ import {
   Receipt,
   Repeat,
   ShoppingBag,
+  Sparkles,
   ShoppingCart,
   Ticket,
   Trash,
@@ -34,10 +36,13 @@ import { useSession, useUserData } from "@/store/session";
 import { toastError, useUi } from "@/store/ui";
 import { Card, EmptyState, PageHeader, ProgressBar, SectionTitle } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/Button";
-import { Chip, Field, Input, MoneyInput, SegmentedControl, Select } from "@/components/ui/form";
+import { Chip, Field, Input, MoneyInput, SegmentedControl, Select, Toggle } from "@/components/ui/form";
 import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { BarList, Donut, Legend, PALETTE } from "@/components/charts/small";
 import { InstitutionSelect } from "@/components/market";
+import { InvoicesCard } from "@/components/Invoices";
+import { useAssistant } from "@/store/assistant";
+import { useAsync } from "@/hooks/useAsync";
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
   Moradia: House,
@@ -207,6 +212,10 @@ export function Gastos() {
   const [sheet, setSheet] = useState<{ open: boolean; item: Expense | null }>({ open: false, item: null });
   const [toDelete, setToDelete] = useState<Expense | null>(null);
   const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
+  const [withAi, setWithAi] = useState(false);
+  const ai = useAsync("ai-info", () => api.ai.info(), { staleMs: 30_000 });
+  const ask = useAssistant((s) => s.ask);
+  const navigate = useNavigate();
   const summary = useMemo(() => summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), [expenses, ym, profile.salary, profile.extraIncome]);
   const planned = profile.fixedExpenses + profile.variableExpenses;
   const donut = summary.byCategory.map((c) => ({ label: c.category, value: c.total, color: catColor(c.category) }));
@@ -223,7 +232,7 @@ export function Gastos() {
   const doExport = async (format: "pdf" | "xlsx") => {
     setExporting(format);
     try {
-      const res = await api.exportReport(ym, format);
+      const res = await api.exportReport(ym, format, withAi && !!ai.data?.hasKey);
       if (res) toast({ title: "Relatório salvo", message: res.path, tone: "success" });
     } catch (err) {
       toastError(err, "Não foi possível exportar");
@@ -239,6 +248,11 @@ export function Gastos() {
         subtitle="Registre compras (inclusive parceladas), veja para onde vai seu dinheiro e baixe o relatório do mês."
         actions={
           <>
+            {ai.data?.hasKey && (
+              <label className="flex items-center gap-2 text-[13px] text-muted mr-1" title="O Assistente escreve um resumo do mês com pontos de atenção e sugestões dentro do PDF ou da planilha.">
+                <Toggle checked={withAi} onChange={setWithAi} label="Incluir análise do Assistente" /> Com análise da IA
+              </label>
+            )}
             <Button variant="secondary" icon={FileText} loading={exporting === "pdf"} onClick={() => void doExport("pdf")}>
               PDF
             </Button>
@@ -263,6 +277,20 @@ export function Gastos() {
         {ym !== currentYm() && (
           <Button size="sm" variant="ghost" onClick={() => setYm(currentYm())}>
             Hoje
+          </Button>
+        )}
+        {ai.data?.hasKey && summary.entries.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={Sparkles}
+            className="ml-auto"
+            onClick={() => {
+              ask({ mode: "financas", question: `Analise meus gastos de ${ymLabel(ym)}: onde estou gastando demais e o que posso cortar?` });
+              navigate("/assistente");
+            }}
+          >
+            Analisar com IA
           </Button>
         )}
       </div>
@@ -294,6 +322,8 @@ export function Gastos() {
           <div className="text-[12.5px] text-muted">nos próximos 6 meses</div>
         </Card>
       </div>
+
+      <InvoicesCard ym={ym} summary={summary} />
 
       {summary.entries.length === 0 ? (
         <Card>

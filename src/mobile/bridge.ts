@@ -1,0 +1,141 @@
+// No celular não existe processo principal: o motor do app (core/) roda aqui
+// mesmo, dentro do WebView, e responde pelo mesmo window.investa que o
+// Electron expõe no desktop. As requisições às fontes de dados passam pela
+// rede nativa (CapacitorHttp), sem bloqueio de CORS.
+import { Capacitor } from "@capacitor/core";
+import { App } from "@capacitor/app";
+import { Browser } from "@capacitor/browser";
+import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
+import { LocalNotifications } from "@capacitor/local-notifications";
+import { Share } from "@capacitor/share";
+import { StatusBar, Style } from "@capacitor/status-bar";
+import { SplashScreen } from "@capacitor/splash-screen";
+import { scrypt } from "@noble/hashes/scrypt.js";
+import { Backend } from "../../core/backend";
+import { setStreamFetch } from "../../core/http";
+import { randomHexWeb, toHex, type FileStore, type Platform } from "../../core/platform";
+
+const FILES = ["investa-data.json", "investa-data.bak.json", "cache-tesouro.json", "cache-credito.json"];
+
+async function loadFiles(): Promise<FileStore> {
+  const cache = new Map<string, string>();
+  await Promise.all(
+    FILES.map(async (name) => {
+      try {
+        const r = await Filesystem.readFile({ path: name, directory: Directory.Data, encoding: Encoding.UTF8 });
+        cache.set(name, typeof r.data === "string" ? r.data : await (r.data as Blob).text());
+      } catch {
+        // arquivo ainda não existe
+      }
+    })
+  );
+  // As gravações são em fila para nunca sobrescrever uma mais nova com uma antiga.
+  let queue: Promise<unknown> = Promise.resolve();
+  return {
+    read: (name) => cache.get(name) ?? null,
+    write(name, data) {
+      cache.set(name, data);
+      queue = queue
+        .then(() => Filesystem.writeFile({ path: name, data, directory: Directory.Data, encoding: Encoding.UTF8, recursive: true }))
+        .catch(() => undefined);
+    },
+  };
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+type Listener = (payload: unknown) => void;
+
+export async function installMobileBridge(): Promise<void> {
+  const listeners = new Map<string, Set<Listener>>();
+  const emit = (channel: string, payload: unknown) => listeners.get(channel)?.forEach((cb) => cb(payload));
+  let active = true;
+  App.addListener("appStateChange", (s) => {
+    active = s.isActive;
+  });
+
+  // A IA responde em streaming. O fetch nativo entrega a resposta inteira de uma
+  // vez, então para a NVIDIA tenta primeiro o fetch do próprio WebView.
+  const webFetch = (window as unknown as { CapacitorWebFetch?: typeof fetch }).CapacitorWebFetch;
+  if (webFetch) {
+    setStreamFetch(async (url, init) => {
+      try {
+        return await webFetch(url, init);
+      } catch {
+        return fetch(url, init);
+      }
+    });
+  }
+
+  const info = await App.getInfo().catch(() => ({ version: "1.0.0" }));
+  const files = await loadFiles();
+  let notificationId = 1;
+
+  const platform: Platform = {
+    kind: "mobile",
+    os: Capacitor.getPlatform(),
+    version: info.version,
+    dataDir: "Armazenamento interno do app",
+    files,
+    secrets: {
+      // O armazenamento do app no Android já é privado; a chave fica em base64.
+      encrypt: (plain) => ({ data: btoa(unescape(encodeURIComponent(plain))), mode: "plain" }),
+      decrypt: (data) => decodeURIComponent(escape(atob(data))),
+    },
+    hashPassword: (password, salt) => toHex(scrypt(new TextEncoder().encode(password), new TextEncoder().encode(salt), { N: 16384, r: 8, p: 1, dkLen: 64 })),
+    randomHex: randomHexWeb,
+    emit,
+    notify(n, settings) {
+      if (active || !settings.desktopNotifications) return;
+      void LocalNotifications.schedule({
+        notifications: [{ id: notificationId++, title: n.title, body: n.message, smallIcon: "ic_stat_investa", extra: { link: n.link ?? "/alertas" } }],
+      }).catch(() => undefined);
+    },
+    async saveReport(report) {
+      const data = report.format === "xlsx" ? await report.xlsx() : await report.pdf();
+      const written = await Filesystem.writeFile({ path: report.fileName, data: bytesToBase64(data), directory: Directory.Cache });
+      await Share.share({ title: report.fileName, files: [written.uri], dialogTitle: "Salvar ou enviar relatório" }).catch(() => undefined);
+      return { path: report.fileName };
+    },
+    openExternal: (url) => void Browser.open({ url }),
+    setTheme(theme) {
+      void StatusBar.setStyle({ style: theme === "light" ? Style.Light : Style.Dark }).catch(() => undefined);
+      void StatusBar.setBackgroundColor({ color: theme === "light" ? "#F2F4F8" : "#0B0F1A" }).catch(() => undefined);
+    },
+  };
+
+  const backend = new Backend(platform);
+  window.investa = {
+    platform: platform.os,
+    invoke: (channel: string, args?: unknown) => backend.invoke(channel, args),
+    on(event: string, cb: Listener) {
+      if (!listeners.has(event)) listeners.set(event, new Set());
+      listeners.get(event)!.add(cb);
+      return () => listeners.get(event)?.delete(cb);
+    },
+  };
+
+  backend.start();
+  void LocalNotifications.requestPermissions().catch(() => undefined);
+  LocalNotifications.addListener("localNotificationActionPerformed", (a) => {
+    const link = (a.notification.extra as { link?: string } | undefined)?.link;
+    if (link) emit("navigate", link);
+  });
+  // Botão voltar do Android: volta uma tela; na Início, minimiza.
+  App.addListener("backButton", ({ canGoBack }) => {
+    if (canGoBack && location.hash && location.hash !== "#/") history.back();
+    else void App.minimizeApp();
+  });
+  App.addListener("pause", () => backend.store.flush());
+  void StatusBar.setOverlaysWebView({ overlay: false }).catch(() => undefined);
+  platform.setTheme?.(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+  setTimeout(() => void SplashScreen.hide().catch(() => undefined), 300);
+}
+
+export function isNativeApp(): boolean {
+  return Capacitor.isNativePlatform();
+}

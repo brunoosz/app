@@ -131,6 +131,7 @@ await go("mercado/BTC-USD", "ativo-btc", 6000);
 await go("aulas", "aulas", 1500);
 await go("assistente", "assistente", 1500);
 await go("simulador", "simulador", 2500);
+await go("vale-a-pena", "vale-a-pena", 1500);
 await go("objetivos", "objetivos", 2500);
 await go("gastos", "gastos", 1500);
 await go("bancos", "bancos", 8000);

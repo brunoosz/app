@@ -134,7 +134,7 @@ function MobileNav() {
           return (
             <Link key={item.to} to={item.to} className={clsx("flex flex-col items-center justify-center gap-1 text-[10.5px] font-medium", active ? "text-primary" : "text-muted")}>
               <Icon size={21} strokeWidth={active ? 2.3 : 1.9} />
-              {item.label.replace("Professor IA", "IA")}
+              {item.label}
             </Link>
           );
         })}

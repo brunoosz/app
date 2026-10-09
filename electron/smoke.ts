@@ -1,10 +1,10 @@
 import { CATALOG } from "@shared/catalog";
-import { getChart, getQuotes, search } from "./services/yahoo";
-import { getCopom, getFocus, getIndicators, sgsProbe } from "./services/bcb";
-import { fetchWithTimeout } from "./services/http";
-import { getTesouro } from "./services/tesouro";
-import { getNews } from "./services/news";
-import { getBanks, getCreditRates } from "./services/banks";
+import { getChart, getQuotes, search } from "../core/yahoo";
+import { getCopom, getFocus, getIndicators, sgsProbe } from "../core/bcb";
+import { fetchWithTimeout } from "../core/http";
+import { getTesouro } from "../core/tesouro";
+import { getNews } from "../core/news";
+import { getBanks, getCreditRates } from "../core/banks";
 
 let failures = 0;
 
