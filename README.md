@@ -45,7 +45,7 @@ São 30 aulas em 10 módulos, de "o que é investir" até montar uma carteira, i
 
 ## Gastos, faturas e metas
 
-Lance os gastos do mês por categoria e cartão, inclusive compras parceladas, e informe quanto veio a fatura de cada banco. Quando as faturas passam da renda, o app avisa, e o botão "Pedir ajuda ao Assistente" monta um plano para pagar sem se endividar, comparando parcelar a fatura, empréstimo e o rotativo com os juros reais do Banco Central. O mês pode ser exportado em PDF ou Excel, com uma análise escrita pelo Assistente se você quiser.
+Em "Minhas contas", informe quanto tem em cada banco: o app mostra a fatura em aberto daquele banco e quanto fica livre de verdade depois de pagá-la. Dinheiro que entra fora do salário, como a venda de um videogame ou um freela, vai em "Recebi dinheiro" e pode ser somado direto ao saldo da conta. Lance os gastos do mês por categoria e cartão, inclusive compras parceladas, e informe quanto veio a fatura de cada banco. Quando as faturas passam da renda, o app avisa, e o botão "Pedir ajuda ao Assistente" monta um plano para pagar sem se endividar, comparando parcelar a fatura, empréstimo e o rotativo com os juros reais do Banco Central. O mês pode ser exportado em PDF ou Excel, com uma análise escrita pelo Assistente se você quiser.
 
 Cada meta tem valor e prazo. Com o CDI e o IPCA de hoje, o app projeta quanto você terá no fim do prazo e, se não for suficiente, quanto precisa aplicar por mês. Para a parte aplicada em CDB, LCI ou LCA, também mostra quanto você teria em outros bancos.
 
@@ -119,7 +119,7 @@ Não há versão pronta para iPhone, que exige uma conta paga de desenvolvedor d
 
 1. Crie uma conta. A primeira conta criada recebe o cargo Dono, e as seguintes, feitas pela tela de cadastro, entram como Usuário. O Dono pode criar Administradores e outros Donos na tela Usuários.
 2. Responda ao questionário: renda, gastos, quanto dá para investir, perfil de investidor e objetivo principal. Os dados financeiros podem ser alterados depois em Configurações.
-3. Para ativar o Assistente, crie uma chave em [build.nvidia.com](https://build.nvidia.com/settings/api-keys), cole a chave (`nvapi-...`) em Configurações → Inteligência Artificial e clique em "Testar conexão". Só o Dono vê essa seção. A chave vale para todas as contas do aparelho, e no celular ela é configurada à parte.
+3. Para ativar o Assistente, crie uma chave em [build.nvidia.com](https://build.nvidia.com/settings/api-keys), cole a chave (`nvapi-...`) em Configurações → Inteligência Artificial e clique em "Testar conexão". Só o Dono vê essa seção. A chave vale para todas as contas; com a nuvem ligada, vale também em todos os aparelhos.
 
 Todo mundo entra pela mesma tela, só com usuário e senha. O cargo vem da conta e define o que aparece dentro do app: a tela Usuários, por exemplo, só existe para Dono e Administrador. Com "Manter conectado" ligado (é o padrão), a sessão fica salva por 30 dias e o login é pulado.
 
@@ -202,6 +202,19 @@ Em cada pasta da lista abaixo, o app procura `config.json`, `investa.config.json
 4. só no modo `--dev`, a pasta de onde o app foi iniciado (a raiz do projeto, com `npm run electron:dev`).
 
 O arquivo também aceita os campos `apiKey` e `baseUrl`. Do `.env`, o app lê só a chave. O modelo escolhido em Configurações tem prioridade sobre o do arquivo. A tela não tem campo para a URL, então outra API compatível com a da OpenAI (com `/chat/completions` em streaming) só pode ser usada pelo campo `baseUrl` do arquivo. Todos esses nomes de arquivo estão no `.gitignore`.
+
+## Contas na nuvem (PC e celular juntos)
+
+Com a nuvem ligada, a conta é a mesma no computador e no celular: entra com o mesmo usuário e senha, e gastos, carteira, metas e aulas aparecem nos dois. Os cargos ficam no servidor. A primeira conta é a do Dono, toda conta nova começa como Usuário e só o Dono muda cargos, então ninguém consegue se promover pelo cadastro. A nuvem usa o [Supabase](https://supabase.com), que tem plano gratuito. Para ligar, uma vez só:
+
+1. Crie um projeto no Supabase.
+2. Em SQL Editor → New query, cole o conteúdo de [`supabase/schema.sql`](supabase/schema.sql) e clique em Run.
+3. Em Authentication → Sign In / Providers → Email, desligue "Confirm email". O app usa nome de usuário, não e-mail de verdade.
+4. Em Project Settings → API, copie a Project URL e a chave `anon` `public`.
+5. No GitHub, em Settings → Secrets and variables → Actions, crie os segredos `INVESTA_CLOUD_URL` (a URL) e `INVESTA_CLOUD_KEY` (a chave anon). O próximo build gera o instalador e o APK já ligados à nuvem.
+6. Instale a versão nova e entre primeiro no computador com a conta que você já tem: ela sobe para a nuvem com os dados e vira a conta do Dono. Depois, é só entrar no celular com o mesmo usuário e senha.
+
+Cada aparelho guarda uma cópia local. Sem internet, o login usa essa cópia e o que for lançado sobe quando a conexão voltar. As mudanças feitas em outro aparelho chegam em até um minuto. Sem os dois segredos, o app funciona como antes, com contas só no aparelho.
 
 ## Dados locais
 
@@ -286,7 +299,8 @@ O workflow [`media.yml`](.github/workflows/media.yml) gera as imagens deste READ
 ## Estrutura
 
 ```
-core/              motor do app: contas, armazenamento, fontes de dados, IA, alertas, relatórios e preços
+core/              motor do app: contas (locais e na nuvem), armazenamento, fontes de dados, IA, alertas, relatórios e preços
+supabase/          schema.sql com tabelas, cargos e permissões da nuvem
 electron/          app Windows: janela, IPC, bandeja e notificações
   preload.ts       ponte entre a interface e o processo principal
   smoke.ts         teste das fontes de dados
@@ -307,7 +321,8 @@ Stack: Electron 43, Capacitor 8, React 18, Vite 5, TypeScript 5, Tailwind CSS 3,
 - O Yahoo Finance não tem API oficial. Se os endpoints mudarem, cotações e gráficos param de funcionar até o código ser ajustado.
 - As taxas dos bancos (percentual do CDI) estão fixas em `shared/banks.ts` e precisam ser atualizadas à mão. Só o CDI usado no cálculo vem do Banco Central.
 - O calendário do Copom está fixo em `core/bcb.ts` e só cobre 2025 e 2026. As reuniões de 2027 precisam ser incluídas antes da virada do ano.
-- Não há sincronização entre aparelhos. O computador e o celular têm contas e dados separados, e o ranking de XP só compara contas do mesmo aparelho.
+- Sem a nuvem configurada, o computador e o celular têm contas e dados separados. Com a nuvem, se a mesma conta for alterada em dois aparelhos sem internet ao mesmo tempo, vale a última que sincronizar.
+- Com a nuvem, a chave da IA do Dono fica guardada no Supabase e pode ser lida por qualquer conta ativa do app, porque cada aparelho chama a NVIDIA direto. Para uso entre pessoas de confiança, como uma família, isso não é problema; para um app aberto ao público, o certo seria um servidor intermediário.
 - A cada pergunta, o Assistente envia ao provedor (a NVIDIA, por padrão) o nome do usuário e os dados que o modo usa: perfil financeiro, carteira, objetivos, gastos, faturas, alertas, notificações recentes e progresso nas aulas, além das últimas 12 mensagens da conversa daquele modo.
 - No Android, os alertas só rodam com o app aberto, e a chave da IA fica em base64 no armazenamento privado do app. No Windows, se o sistema não oferecer o `safeStorage` do Electron, a chave também fica só em base64.
 - O APK é assinado com uma chave que está no repositório. Serve para instalar fora da Play Store, não para publicar na loja.

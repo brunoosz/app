@@ -134,6 +134,26 @@ await go("simulador", "simulador", 2500);
 await go("vale-a-pena", "vale-a-pena", 1500);
 await go("objetivos", "objetivos", 2500);
 await go("gastos", "gastos", 1500);
+// Saldo de conta e entrada extra ("Recebi dinheiro") somando ao saldo.
+{
+  const dialog = win.getByRole("dialog");
+  await win.getByRole("button", { name: "Adicionar conta" }).click();
+  await wait(400);
+  await dialog.locator("select").first().selectOption("nubank");
+  await dialog.locator('input[inputmode="decimal"]').first().fill("2000");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await wait(600);
+  await win.getByRole("button", { name: "Recebi dinheiro" }).click();
+  await wait(400);
+  await dialog.getByPlaceholder("Ex.: vendi o videogame").fill("Vendi o videogame");
+  await dialog.locator('input[inputmode="decimal"]').first().fill("800");
+  await dialog.getByRole("button", { name: "Registrar" }).click();
+  await wait(800);
+  const ok = /R\$\s?2\.800,00/.test(await win.locator("main").innerText());
+  console.log(`[gastos-contas] saldo somado: ${ok ? "sim" : "NÃO"}`);
+  if (!ok) pageErrors.push("Saldo da conta não somou a entrada extra");
+  await shot("gastos-contas");
+}
 await go("bancos", "bancos", 8000);
 await win.getByRole("button", { name: "Juros de crédito", exact: true }).click();
 await wait(2000);

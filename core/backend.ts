@@ -223,7 +223,14 @@ export class Backend {
       .getData(userId, "invoices")
       .filter((i) => i.ym === ym && !i.paid)
       .reduce((s, i) => s + i.amount, 0);
-    return { monthBalance: month.balance, invoicesOpen, emergencyReserve: profile.emergencyReserve, monthlyIncome: profile.salary + profile.extraIncome };
+    const accounts = this.store.getData(userId, "accounts");
+    return {
+      monthBalance: month.balance,
+      invoicesOpen,
+      emergencyReserve: profile.emergencyReserve,
+      monthlyIncome: profile.salary + profile.extraIncome,
+      accountsBalance: accounts.length ? accounts.reduce((s, a) => s + a.balance, 0) : undefined,
+    };
   }
 
   private async aiMessages(userId: string, mode: AiMode, messages: { role: "user" | "assistant"; content: string }[], attachment?: string) {
@@ -347,7 +354,7 @@ export class Backend {
     this.on("data:getAll", () => this.store.getAllData(this.uid()));
     this.on("data:set", (a: { key: UserDataKey; value: UserDataMap[UserDataKey] }) => {
       if (!USER_DATA_KEYS.includes(a.key)) throw new AppError("INVALID", "Dado inválido.");
-      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices"].includes(a.key);
+      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts"].includes(a.key);
       if (isArray !== Array.isArray(a.value) || a.value === null || typeof a.value !== "object") throw new AppError("INVALID", "Formato inválido.");
       this.store.setData(this.uid(), a.key, a.value);
       this.cloud.schedulePush(this.uid());

@@ -253,6 +253,16 @@ export interface UserDataMap {
   simulator: SimulatorState;
   chat: ChatMessage[];
   invoices: Invoice[];
+  accounts: BankAccount[];
+}
+
+/** Saldo de uma conta (corrente, poupança ou carteira digital), informado pela pessoa. */
+export interface BankAccount {
+  id: string;
+  institution: string;
+  balance: number;
+  updatedAt: string;
+  notes?: string;
 }
 
 export type UserDataKey = keyof UserDataMap;
@@ -268,6 +278,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "simulator",
   "chat",
   "invoices",
+  "accounts",
 ];
 
 export interface Quote {
@@ -521,5 +532,5 @@ export interface DealCheck {
   offers: DealOffer[];
   historyLinks: { label: string; url: string }[];
   notes: string[];
-  budget: { monthBalance: number; invoicesOpen: number; emergencyReserve: number; monthlyIncome: number };
+  budget: { monthBalance: number; invoicesOpen: number; emergencyReserve: number; monthlyIncome: number; accountsBalance?: number };
 }
