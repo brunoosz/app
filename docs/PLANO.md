@@ -4,13 +4,27 @@ Pedidos de 09/10/2026, na ordem em que devem ser feitos. Cada etapa vira uma ver
 
 Nuvem já configurada (Email ligado no Supabase, login feito em 09/10/2026): faturas, gastos, saldos, metas e aulas ficam salvos na conta e sincronizam entre PC e celular.
 
-## Prioridade (atualizada em 09/10/2026, depois do teste no celular)
-1. **IA funcionando no celular** (A)
-2. **Chave da IA que nunca se perde** (B)
-3. **IA rápida** (item 1)
-4. **Gastos: o que sobra de verdade** (item 2)
-5. **Celular: notificações e números cortados** (C), junto com o visual (item 3)
-6. Daí em diante, seguir a numeração abaixo (4 a 13).
+## Ordem de importância (definida em 09/10/2026)
+O que está quebrado vem primeiro, depois o que muda o uso do dia a dia, depois o que é extra.
+
+1. IA no celular travada em "Pensando…" (A)
+2. Chave da IA que nunca se perde (B)
+3. IA rápida (item 1)
+4. Gastos: disponível para gastar descontando faturas (item 2)
+5. Celular: notificações e números cortados (C)
+6. Visual: filtros, logo, telas no celular e tablet (item 3)
+7. Início sem investimentos (item 4)
+8. Contas fixas com lembrete (item 10) — entra no "disponível para gastar"
+9. Assistente: memória, apagar mensagens, análise de compra (item 5)
+10. Gastos que vão vir com plano e PDF (item 6)
+11. "Vale a pena?" no Mercado Livre e outras lojas (item 9)
+12. Plano de investimento e de riqueza com pesquisa na internet (item 7)
+13. Caixinhas automáticas (item 12)
+14. Modo privacidade (item 11)
+15. Resumo semanal no domingo (item 13)
+16. Gravar voz (item 8)
+17. Backup em arquivo (Outras ideias)
+18. Limpeza do histórico do GitHub (item 14) — só quando o Bruno pedir
 
 ## A. IA no celular travada em "Pensando…"
 - No celular (1.0.23, "Automático · GLM 5.3") a pergunta "teste" fica parada em "Pensando…". No PC funciona.
