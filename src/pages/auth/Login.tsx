@@ -1,13 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Crown, Lock, ShieldCheck, Sparkles, User, CircleAlert } from "lucide-react";
-import type { Role } from "@shared/types";
-import { ROLE_LABEL } from "@shared/types";
+import { Lock, Sparkles, User, CircleAlert } from "lucide-react";
 import { api } from "@/lib/api";
 import { useSession } from "@/store/session";
 import { Button } from "@/components/ui/Button";
-import { Field, Input, PasswordInput, SegmentedControl, Toggle } from "@/components/ui/form";
+import { Field, Input, PasswordInput, Toggle } from "@/components/ui/form";
 import { AppIcon } from "@/components/Logo";
 import { AuthLayout } from "./AuthLayout";
 
@@ -30,13 +28,12 @@ export function ErrorBanner({ message, shakeKey }: { message: string | null; sha
 
 export function Login() {
   const signIn = useSession((s) => s.signIn);
-  const [role, setRole] = useState<Role>("usuario");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [errorField, setErrorField] = useState<"user" | "password" | "role" | null>(null);
+  const [errorField, setErrorField] = useState<"user" | "password" | null>(null);
   const [shake, setShake] = useState(0);
   const [firstRun, setFirstRun] = useState(false);
 
@@ -59,12 +56,12 @@ export function Login() {
     setError(null);
     setErrorField(null);
     try {
-      const user = await api.login({ username, password, role, remember });
+      const user = await api.login({ username, password, remember });
       await signIn(user);
     } catch (err) {
       const code = (err as { code?: string }).code;
       setError((err as Error).message);
-      setErrorField(code === "WRONG_PASSWORD" ? "password" : code === "USER_NOT_FOUND" ? "user" : code === "ROLE_MISMATCH" ? "role" : null);
+      setErrorField(code === "WRONG_PASSWORD" ? "password" : code === "USER_NOT_FOUND" ? "user" : null);
       setShake((s) => s + 1);
       if (code === "WRONG_PASSWORD") setPassword("");
     } finally {
@@ -97,24 +94,6 @@ export function Login() {
         )}
 
         <form onSubmit={submit} className="mt-7 space-y-4">
-          <Field label="Entrar como">
-            <SegmentedControl<Role>
-              block
-              value={role}
-              onChange={(r) => {
-                setRole(r);
-                if (errorField === "role") {
-                  setError(null);
-                  setErrorField(null);
-                }
-              }}
-              options={[
-                { value: "usuario", label: ROLE_LABEL.usuario, icon: User },
-                { value: "adm", label: "Admin", icon: ShieldCheck },
-                { value: "dono", label: ROLE_LABEL.dono, icon: Crown },
-              ]}
-            />
-          </Field>
           <Field label="Usuário">
             <Input
               icon={User}

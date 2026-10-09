@@ -46,3 +46,6 @@ investa.config.json
 
 # testes
 /e2e-shots
+
+# ícones temporários
+/.icons-*

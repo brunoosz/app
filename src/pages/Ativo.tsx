@@ -161,7 +161,7 @@ export function Ativo() {
           <Button variant="secondary" icon={Gamepad2} onClick={() => navigate(`/simulador?ativo=${encodeURIComponent(symbol)}`)}>
             Simular
           </Button>
-          <Button icon={Sparkles} onClick={() => navigate(`/assistente?q=${encodeURIComponent(`Analise ${displaySymbol(symbol)} para mim com os dados de hoje. Vale a pena investir considerando meu perfil?`)}`)}>
+          <Button icon={Sparkles} onClick={() => navigate(`/assistente?modo=mercado&q=${encodeURIComponent(`Analise ${displaySymbol(symbol)} para mim com os dados de hoje. Vale a pena investir considerando meu perfil?`)}`)}>
             Perguntar à IA
           </Button>
         </div>

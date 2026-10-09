@@ -1,4 +1,4 @@
 {
   "nvidiaApiKey": "COLE_SUA_CHAVE_AQUI",
-  "model": "meta/llama-3.3-70b-instruct"
+  "model": "auto"
 }

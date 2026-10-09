@@ -12,7 +12,8 @@ const csp: Plugin = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      // No celular o motor do app roda no WebView e fala direto com a IA (https).
+      "connect-src 'self' https:",
       "object-src 'none'",
       "base-uri 'none'",
     ].join("; ");

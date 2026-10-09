@@ -3,28 +3,43 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Copy, KeyRound, RotateCcw, Sparkles, Square, SquarePen } from "lucide-react";
+import { ArrowUp, ChartLine, CircleHelp, Copy, GraduationCap, KeyRound, MessageCircle, RotateCcw, ShoppingCart, Sparkles, Square, SquarePen, Wallet, type LucideIcon } from "lucide-react";
 import clsx from "clsx";
-import type { AiEvent, ChatMessage } from "@shared/types";
+import type { AiEvent, AiMode, ChatMessage } from "@shared/types";
+import { AI_MODES, ASSISTANT_NAME, modeInfo } from "@shared/ai";
 import { api, uid } from "@/lib/api";
 import { timeBR } from "@/lib/format";
-import { isManager, useSession, useUserData } from "@/store/session";
+import { isOwner, useSession, useUserData } from "@/store/session";
+import { useAssistant } from "@/store/assistant";
 import { useUi } from "@/store/ui";
 import { useAsync } from "@/hooks/useAsync";
 import { Avatar, Badge, Card } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/Button";
 import { LogoMark } from "@/components/Logo";
 
-const SUGGESTIONS = [
-  "Por onde eu começo a investir?",
-  "Quais são as melhores ações hoje?",
-  "Monte um plano de investimentos para mim",
-  "Quanto rende R$ 1.000 em um CDB hoje?",
-  "Como está a Selic e o que o último Copom decidiu?",
-  "Analise minha carteira",
-  "Como estão meus gastos este mês?",
-  "Vale a pena investir em fundos imobiliários agora?",
-];
+const MODE_ICONS: Record<string, LucideIcon> = {
+  message: MessageCircle,
+  graduation: GraduationCap,
+  wallet: Wallet,
+  chart: ChartLine,
+  cart: ShoppingCart,
+  help: CircleHelp,
+};
+
+const MODE_KEY = "investa-assistente-modo";
+
+function savedMode(): AiMode {
+  try {
+    const m = localStorage.getItem(MODE_KEY) as AiMode | null;
+    if (m && AI_MODES.some((x) => x.id === m)) return m;
+  } catch {
+    // armazenamento indisponível
+  }
+  return "mercado";
+}
+
+/** Mensagens antigas, sem modo, eram do analista de mercado. */
+const modeOf = (m: ChatMessage): AiMode => m.mode ?? "mercado";
 
 function Message({ m, streaming, onRetry }: { m: ChatMessage; streaming?: boolean; onRetry?: () => void }) {
   const user = useSession((s) => s.user)!;
@@ -70,7 +85,7 @@ function Message({ m, streaming, onRetry }: { m: ChatMessage; streaming?: boolea
               {[0, 1, 2].map((i) => (
                 <motion.span key={i} className="h-2 w-2 rounded-full bg-primary" animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }} transition={{ duration: 1, repeat: Infinity, delay: i * 0.15 }} />
               ))}
-              <span className="text-[13px] text-muted ml-2">Analisando dados em tempo real…</span>
+              <span className="text-[13px] text-muted ml-2">Pensando…</span>
             </div>
           )}
         </div>
@@ -100,33 +115,44 @@ function Message({ m, streaming, onRetry }: { m: ChatMessage; streaming?: boolea
 
 export function Assistente() {
   const user = useSession((s) => s.user)!;
-  const chat = useUserData("chat");
+  const allChat = useUserData("chat");
   const update = useSession((s) => s.update);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const info = useAsync("ai-info", () => api.ai.info(), { staleMs: 5_000 });
+  const [mode, setModeState] = useState<AiMode>(() => (params.get("modo") as AiMode) || savedMode());
   const [input, setInput] = useState("");
   const [streamingId, setStreamingId] = useState<string | null>(null);
-  const [contextAt, setContextAt] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const requestRef = useRef<{ requestId: string; messageId: string } | null>(null);
   const bufferRef = useRef("");
+  const owner = isOwner(user);
+  const current = modeInfo(mode);
+  const chat = allChat.filter((m) => modeOf(m) === mode);
+
+  const setMode = (m: AiMode) => {
+    if (streamingId) return;
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      // armazenamento indisponível
+    }
+    inputRef.current?.focus();
+  };
 
   const scrollDown = useCallback((smooth = true) => {
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: smooth ? "smooth" : "auto" }));
   }, []);
 
-  useEffect(() => scrollDown(false), [scrollDown]);
+  useEffect(() => scrollDown(false), [scrollDown, mode]);
 
   useEffect(() => {
     return api.on<AiEvent>("ai:event", (ev) => {
       const req = requestRef.current;
       if (!req || ev.requestId !== req.requestId) return;
-      if (ev.type === "context") {
-        setContextAt(ev.data ?? null);
-        return;
-      }
+      if (ev.type === "context") return;
       if (ev.type === "chunk" && ev.data) {
         bufferRef.current += ev.data;
         const content = bufferRef.current;
@@ -135,54 +161,60 @@ export function Assistente() {
         return;
       }
       if (ev.type === "error") {
-        update("chat", (list) => list.map((m) => (m.id === req.messageId ? { ...m, content: ev.data ?? "Erro ao falar com a IA.", error: true } : m)));
+        update("chat", (list) => list.map((m) => (m.id === req.messageId ? { ...m, content: ev.data ?? "O Assistente não respondeu. Tente de novo.", error: true } : m)));
       }
       if (ev.type === "done" || ev.type === "error") {
         requestRef.current = null;
         setStreamingId(null);
-        update("chat", (list) => list.map((m) => (m.id === req.messageId && !m.content ? { ...m, content: "Não recebi resposta. Tente novamente.", error: true } : m)).slice(-80));
+        update("chat", (list) => list.map((m) => (m.id === req.messageId && !m.content ? { ...m, content: "Não recebi resposta. Tente novamente.", error: true } : m)).slice(-160));
       }
     });
   }, [update, scrollDown]);
 
   const send = useCallback(
-    async (text: string, history?: ChatMessage[]) => {
+    async (text: string, opts: { mode?: AiMode; history?: ChatMessage[]; attachment?: string } = {}) => {
       const content = text.trim();
+      const m = opts.mode ?? mode;
       if (!content || streamingId) return;
-      const base = history ?? useSession.getState().data.chat;
-      const userMsg: ChatMessage = { id: uid(), role: "user", content, createdAt: new Date().toISOString() };
-      const aiMsg: ChatMessage = { id: uid(), role: "assistant", content: "", createdAt: new Date().toISOString() };
-      const next = [...base, userMsg, aiMsg];
-      update("chat", next);
+      const all = useSession.getState().data.chat;
+      const base = opts.history ?? all.filter((x) => modeOf(x) === m);
+      const userMsg: ChatMessage = { id: uid(), role: "user", content, createdAt: new Date().toISOString(), mode: m };
+      const aiMsg: ChatMessage = { id: uid(), role: "assistant", content: "", createdAt: new Date().toISOString(), mode: m };
+      const keep = opts.history ? all.filter((x) => modeOf(x) !== m || opts.history!.includes(x)) : all;
+      update("chat", [...keep, userMsg, aiMsg]);
       setInput("");
       setStreamingId(aiMsg.id);
       bufferRef.current = "";
       const requestId = uid();
       requestRef.current = { requestId, messageId: aiMsg.id };
       scrollDown();
-      const messages = [...base.filter((m) => !m.error), userMsg].map((m) => ({ role: m.role, content: m.content })).slice(-12);
+      const messages = [...base.filter((x) => !x.error), userMsg].map((x) => ({ role: x.role, content: x.content })).slice(-12);
       try {
-        await api.ai.chat(requestId, messages);
+        await api.ai.chat(requestId, messages, m, opts.attachment);
       } catch (err) {
         requestRef.current = null;
         setStreamingId(null);
-        update("chat", (list) => list.map((m) => (m.id === aiMsg.id ? { ...m, content: (err as Error).message, error: true } : m)));
+        update("chat", (list) => list.map((x) => (x.id === aiMsg.id ? { ...x, content: (err as Error).message, error: true } : x)));
         void info.reload();
       }
     },
-    [streamingId, update, scrollDown, info]
+    [streamingId, update, scrollDown, info, mode]
   );
 
+  // Pergunta vinda de outra tela (?q= ou rascunho com dados anexados).
   useEffect(() => {
+    if (!info.data) return;
+    const draft = useAssistant.getState().take();
     const q = params.get("q");
-    if (q && info.data?.hasKey) {
-      setParams({}, { replace: true });
-      void send(q);
-    } else if (q && info.data && !info.data.hasKey) {
-      setInput(q);
-      setParams({}, { replace: true });
-    }
-  }, [params, info.data, send, setParams]);
+    const m = (params.get("modo") as AiMode) || draft?.mode;
+    if (params.has("q") || params.has("modo")) setParams({}, { replace: true });
+    if (m) setModeState(m);
+    const question = draft?.question ?? q;
+    if (!question) return;
+    if (info.data.hasKey) void send(question, { mode: m ?? mode, attachment: draft?.attachment });
+    else setInput(question);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info.data]);
 
   const stop = () => {
     const req = requestRef.current;
@@ -192,45 +224,63 @@ export function Assistente() {
   };
 
   const retryLast = () => {
-    const lastUserIndex = [...chat].map((m) => m.role).lastIndexOf("user");
+    const lastUserIndex = chat.map((m) => m.role).lastIndexOf("user");
     if (lastUserIndex < 0) return;
-    const text = chat[lastUserIndex].content;
-    void send(text, chat.slice(0, lastUserIndex));
+    void send(chat[lastUserIndex].content, { history: chat.slice(0, lastUserIndex) });
   };
 
   const hasKey = info.data?.hasKey;
-  const model = info.data?.model?.split("/").pop();
 
   return (
-    <div className="flex flex-col h-[calc(100vh-52px)] -mb-16 -mt-1">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
+    <div className="flex flex-col h-[calc(100dvh-52px)] max-sm:h-[calc(100dvh-140px)] -mb-16 -mt-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
         <div className="flex items-center gap-3">
           <div className="h-11 w-11 rounded-2xl bg-brand flex items-center justify-center shadow-glow">
             <Sparkles size={22} className="text-white" />
           </div>
           <div>
-            <h1 className="text-[24px] font-bold tracking-tight leading-tight">Professor IA</h1>
+            <h1 className="text-[24px] font-bold tracking-tight leading-tight">{ASSISTANT_NAME}</h1>
             <div className="text-[12.5px] text-muted flex items-center gap-2">
-              {hasKey ? (
+              {owner && hasKey ? (
                 <>
-                  <span className="h-2 w-2 rounded-full bg-success" /> Conectado · {model}
-                  {contextAt && <span>· dados de {timeBR(contextAt)}</span>}
+                  <span className="h-2 w-2 rounded-full bg-success" /> {info.data?.choice === "auto" ? "Automático" : "Modelo fixo"} · {info.data?.modelLabel}
                 </>
-              ) : info.loading ? (
-                "Verificando…"
-              ) : (
+              ) : owner && !info.loading && !hasKey ? (
                 <>
                   <span className="h-2 w-2 rounded-full bg-warning" /> IA não configurada
                 </>
+              ) : (
+                current.description
               )}
             </div>
           </div>
         </div>
         {chat.length > 0 && (
-          <Button variant="secondary" icon={SquarePen} onClick={() => update("chat", [])} disabled={!!streamingId}>
+          <Button variant="secondary" icon={SquarePen} onClick={() => update("chat", (list) => list.filter((m) => modeOf(m) !== mode))} disabled={!!streamingId}>
             Nova conversa
           </Button>
         )}
+      </div>
+
+      <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-3 -mx-1 px-1">
+        {AI_MODES.map((m) => {
+          const Icon = MODE_ICONS[m.icon] ?? MessageCircle;
+          const active = m.id === mode;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              disabled={!!streamingId && !active}
+              title={m.description}
+              className={clsx(
+                "shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-[13.5px] font-medium border transition disabled:opacity-50",
+                active ? "bg-primary text-white border-transparent shadow-glow" : "border-line/12 bg-surface/60 text-muted hover:text-fg hover:border-primary/30"
+              )}
+            >
+              <Icon size={15} /> {m.label}
+            </button>
+          );
+        })}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto -mx-2 px-2">
@@ -241,12 +291,13 @@ export function Assistente() {
                 <KeyRound size={22} />
               </div>
               <div className="flex-1">
-                <div className="font-semibold">Conecte a inteligência artificial</div>
+                <div className="font-semibold">{owner ? "Conecte a inteligência artificial" : "O Assistente ainda não foi ativado"}</div>
                 <p className="text-[14px] text-muted mt-1">
-                  O Professor IA usa modelos da NVIDIA para responder com base nos seus dados e no mercado em tempo real.{" "}
-                  {isManager(user) ? "Cole sua chave da API da NVIDIA (começa com nvapi-) nas configurações." : "Peça ao Dono do aplicativo para configurar a chave da API."}
+                  {owner
+                    ? "O Assistente usa modelos da NVIDIA. Cole sua chave da API (começa com nvapi-) nas configurações."
+                    : "Peça ao Dono do aplicativo para ativar o Assistente."}
                 </p>
-                {isManager(user) && (
+                {owner && (
                   <Button className="mt-3" icon={KeyRound} onClick={() => navigate("/configuracoes?secao=ia")}>
                     Configurar agora
                   </Button>
@@ -257,16 +308,16 @@ export function Assistente() {
         )}
 
         {chat.length === 0 ? (
-          <div className="flex flex-col items-center text-center pt-6 pb-10">
-            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 18 }} className="h-20 w-20 rounded-[26px] bg-surface border border-line/15 flex items-center justify-center shadow-2xl">
+          <div className="flex flex-col items-center text-center pt-4 pb-10">
+            <motion.div key={mode} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 18 }} className="h-20 w-20 rounded-[26px] bg-surface border border-line/15 flex items-center justify-center shadow-2xl">
               <LogoMark size={44} animated />
             </motion.div>
-            <h2 className="text-[26px] font-bold tracking-tight mt-5">Como posso ajudar, {user.name.split(" ")[0]}?</h2>
-            <p className="text-muted mt-2 max-w-lg">
-              Pergunte qualquer coisa: por onde começar, quais ativos estão em destaque hoje, como montar sua carteira ou organizar seus gastos. Eu uso o mercado em tempo real e as suas informações para personalizar as respostas.
-            </p>
-            <div className="grid sm:grid-cols-2 gap-2 mt-7 w-full max-w-2xl">
-              {SUGGESTIONS.map((s) => (
+            <h2 className="text-[24px] font-bold tracking-tight mt-5">
+              {current.label}
+            </h2>
+            <p className="text-muted mt-2 max-w-lg">{current.description}</p>
+            <div className="grid sm:grid-cols-2 gap-2 mt-6 w-full max-w-2xl">
+              {current.suggestions.map((s) => (
                 <button
                   key={s}
                   disabled={!hasKey}
@@ -306,7 +357,7 @@ export function Assistente() {
                   void send(input);
                 }
               }}
-              placeholder={hasKey ? "Pergunte ao Professor IA…" : "Configure a IA para conversar"}
+              placeholder={hasKey ? `Mensagem para o ${ASSISTANT_NAME} (${current.short})` : "O Assistente ainda não foi ativado"}
               className="flex-1 resize-none bg-transparent outline-none text-[15px] py-2 max-h-[180px] placeholder:text-muted/70"
             />
             <AnimatePresence mode="wait" initial={false}>
@@ -325,9 +376,11 @@ export function Assistente() {
               )}
             </AnimatePresence>
           </div>
-          <div className="text-[11.5px] text-muted text-center mt-2">
-            <Badge className="mr-1">Educacional</Badge> As respostas usam dados reais do momento, mas não são recomendação individual de investimento. Confira antes de decidir.
-          </div>
+          {mode !== "geral" && mode !== "app" && (
+            <div className="text-[11.5px] text-muted text-center mt-2">
+              <Badge className="mr-1">Educacional</Badge> As respostas usam dados reais do momento, mas não são recomendação individual. Confira antes de decidir.
+            </div>
+          )}
         </div>
       </div>
     </div>

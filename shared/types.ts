@@ -225,7 +225,22 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   error?: boolean;
+  mode?: AiMode;
 }
+
+/** Fatura do cartão de um banco em um mês. */
+export interface Invoice {
+  id: string;
+  institution: string;
+  ym: string;
+  amount: number;
+  dueDay?: number;
+  minimumPayment?: number;
+  paid: boolean;
+  notes?: string;
+}
+
+export type AiMode = "geral" | "professor" | "app" | "financas" | "mercado" | "compras";
 
 export interface UserDataMap {
   profile: FinancialProfile;
@@ -237,6 +252,7 @@ export interface UserDataMap {
   learning: LearningState;
   simulator: SimulatorState;
   chat: ChatMessage[];
+  invoices: Invoice[];
 }
 
 export type UserDataKey = keyof UserDataMap;
@@ -251,6 +267,7 @@ export const USER_DATA_KEYS: UserDataKey[] = [
   "learning",
   "simulator",
   "chat",
+  "invoices",
 ];
 
 export interface Quote {
@@ -417,15 +434,39 @@ export interface BanksData {
 
 export interface AiConfigInfo {
   hasKey: boolean;
+  /** Só o Dono vê e muda a configuração (modelo, chave, erros técnicos). */
+  canManage: boolean;
+  /** "auto" ou o id do modelo escolhido. Só para o Dono. */
+  choice?: string;
+  /** Modelo em uso agora. Só para o Dono. */
+  model?: string;
+  modelLabel?: string;
   keyPreview?: string;
-  model: string;
-  baseUrl: string;
-  source: "app" | "arquivo" | "ambiente" | null;
+  baseUrl?: string;
+  source?: "app" | "arquivo" | "ambiente" | null;
+  catalogUpdatedAt?: string;
+}
+
+export interface AiModelInfo {
+  id: string;
+  label: string;
+  publisher: string;
+  score: number;
+  tags: string[];
+}
+
+export interface AiCatalog {
+  models: AiModelInfo[];
+  best?: string;
+  updatedAt?: string;
 }
 
 export interface AiChatRequest {
   requestId: string;
   messages: { role: "user" | "assistant"; content: string }[];
+  mode?: AiMode;
+  /** Dados extras anexados à pergunta (fatura, compra analisada etc.). */
+  attachment?: string;
 }
 
 export interface AiEvent {
@@ -452,3 +493,31 @@ export interface LeaderboardEntry {
 
 export type ApiError = { code: string; message: string };
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
+
+export interface DealOffer {
+  store: string;
+  price: number;
+  currency: string;
+  priceBrl?: number;
+  regularPrice?: number;
+  discountPercent?: number;
+  url?: string;
+}
+
+export interface DealCheck {
+  query: string;
+  kind: "jogo" | "produto";
+  title?: string;
+  image?: string;
+  source?: string;
+  url?: string;
+  currentPrice?: number;
+  currency: string;
+  regularPrice?: number;
+  discountPercent?: number;
+  lowestPrice?: { price: number; currency: string; priceBrl?: number; date?: string; note: string };
+  offers: DealOffer[];
+  historyLinks: { label: string; url: string }[];
+  notes: string[];
+  budget: { monthBalance: number; invoicesOpen: number; emergencyReserve: number; monthlyIncome: number };
+}

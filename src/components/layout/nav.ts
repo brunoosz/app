@@ -1,4 +1,5 @@
 import {
+  BadgePercent,
   Bell,
   ChartCandlestick,
   Gamepad2,
@@ -28,7 +29,7 @@ export const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
       { to: "/carteira", label: "Carteira", icon: Wallet },
       { to: "/mercado", label: "Mercado", icon: ChartCandlestick },
       { to: "/aulas", label: "Aulas", icon: GraduationCap },
-      { to: "/assistente", label: "Professor IA", icon: Sparkles },
+      { to: "/assistente", label: "Assistente", icon: Sparkles },
     ],
   },
   {
@@ -36,6 +37,7 @@ export const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
     items: [
       { to: "/objetivos", label: "Objetivos", icon: Target },
       { to: "/gastos", label: "Gastos", icon: Receipt },
+      { to: "/vale-a-pena", label: "Vale a pena?", icon: BadgePercent },
       { to: "/bancos", label: "Bancos", icon: Landmark },
       { to: "/simulador", label: "Simulador", icon: Gamepad2 },
       { to: "/alertas", label: "Alertas", icon: Bell },

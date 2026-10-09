@@ -87,3 +87,7 @@ export function useUserData<K extends UserDataKey>(key: K): UserDataMap[K] {
 export function isManager(user: PublicUser | null): boolean {
   return user?.role === "dono" || user?.role === "adm";
 }
+
+export function isOwner(user: PublicUser | null): boolean {
+  return user?.role === "dono";
+}

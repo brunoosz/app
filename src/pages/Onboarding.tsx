@@ -120,11 +120,11 @@ export function Onboarding() {
                   </div>
                   <h1 className="text-[34px] font-bold tracking-tight">Olá, {firstName(user.name)}!</h1>
                   <p className="text-muted text-[16px] mt-3 max-w-md mx-auto leading-relaxed">
-                    Vamos conhecer sua vida financeira em poucos passos. Com isso, o Professor IA monta o melhor plano para você e o Investa personaliza alertas,
+                    Vamos conhecer sua vida financeira em poucos passos. Com isso, o Assistente monta o melhor plano para você e o Investa personaliza alertas,
                     metas e aulas.
                   </p>
                   <div className="mt-6 inline-flex items-center gap-2 text-[13px] text-muted bg-line/[0.06] rounded-full px-3 py-1.5">
-                    <Sparkles size={14} className="text-primary" /> Seus dados ficam salvos só neste computador. Você pode alterar tudo depois em Configurações.
+                    <Sparkles size={14} className="text-primary" /> Seus dados ficam salvos só neste aparelho. Você pode alterar tudo depois em Configurações.
                   </div>
                 </div>
               )}
@@ -194,7 +194,7 @@ export function Onboarding() {
               )}
 
               {step === 5 && (
-                <StepCard title="Qual seu principal objetivo agora?" subtitle="Isso orienta as sugestões do Professor IA.">
+                <StepCard title="Qual seu principal objetivo agora?" subtitle="Isso orienta as sugestões do Assistente.">
                   <GoalPicker value={p.mainGoal} onChange={(g) => setP({ ...p, mainGoal: g })} />
                   <Field label="Sua idade (opcional)" className="mt-5 max-w-[160px]">
                     <Input inputMode="numeric" value={p.age ?? ""} onChange={(e) => setP({ ...p, age: Number(e.target.value.replace(/\D/g, "")) || undefined })} />

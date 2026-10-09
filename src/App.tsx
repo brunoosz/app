@@ -17,6 +17,7 @@ import { Assistente } from "@/pages/Assistente";
 import { Simulador } from "@/pages/Simulador";
 import { Objetivos } from "@/pages/Objetivos";
 import { Gastos } from "@/pages/Gastos";
+import { ValeAPena } from "@/pages/ValeAPena";
 import { Bancos } from "@/pages/Bancos";
 import { Alertas } from "@/pages/Alertas";
 import { Usuarios } from "@/pages/Usuarios";
@@ -90,6 +91,7 @@ export default function App() {
             <Route path="simulador" element={<Simulador />} />
             <Route path="objetivos" element={<Objetivos />} />
             <Route path="gastos" element={<Gastos />} />
+            <Route path="vale-a-pena" element={<ValeAPena />} />
             <Route path="bancos" element={<Bancos />} />
             <Route path="alertas" element={<Alertas />} />
             <Route

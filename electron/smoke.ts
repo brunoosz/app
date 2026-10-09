@@ -1,10 +1,10 @@
 import { CATALOG } from "@shared/catalog";
-import { getChart, getQuotes, search } from "./services/yahoo";
-import { getCopom, getFocus, getIndicators, sgsProbe } from "./services/bcb";
-import { fetchWithTimeout } from "./services/http";
-import { getTesouro } from "./services/tesouro";
-import { getNews } from "./services/news";
-import { getBanks, getCreditRates } from "./services/banks";
+import { getChart, getQuotes, search } from "../core/yahoo";
+import { getCopom, getFocus, getIndicators, sgsProbe } from "../core/bcb";
+import { fetchWithTimeout } from "../core/http";
+import { getTesouro } from "../core/tesouro";
+import { getNews } from "../core/news";
+import { getBanks, getCreditRates } from "../core/banks";
 
 let failures = 0;
 
@@ -72,6 +72,15 @@ async function main(): Promise<void> {
     (r) => `período ${r.period}; ${r.modalities.map((m) => `${m.label}: ${m.rates.length} instituições (menor ${m.rates[0]?.institution} ${m.rates[0]?.rateMonth}% a.m.)`).join(" | ")}`
   );
   await step("Ranking de bancos", () => getBanks(), (r) => r.scores.slice(0, 5).map((s) => `${s.bankId}:${s.score}`).join(", "));
+
+  await step("Steam: preço do jogo 1091500", async () => {
+    const res = await fetchWithTimeout("https://store.steampowered.com/api/appdetails?appids=1091500&cc=br&l=portuguese", {}, 15_000);
+    return `HTTP ${res.status} ${(await res.text()).slice(0, 160)}`;
+  }, (r) => r);
+  await step("CheapShark: histórico do jogo 1091500", async () => {
+    const res = await fetchWithTimeout("https://www.cheapshark.com/api/1.0/games?steamAppID=1091500", { headers: { "User-Agent": "Investa/1.0 (+https://github.com/brunoosz/app)" } }, 15_000);
+    return `HTTP ${res.status} ${res.headers.get("server") ?? ""} ${(await res.text()).slice(0, 160)}`;
+  }, (r) => r);
 
   for (const code of [1, 10813, 21619, 433, 13522, 4389]) {
     await step(`BCB: série SGS ${code}`, () => sgsProbe(code), (r) => JSON.stringify(r));
