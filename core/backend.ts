@@ -20,10 +20,12 @@ import { buildAiContext, systemPrompt } from "./context";
 import { buildExcel, buildPdf, buildReportHtml, type ReportInput } from "./reports";
 import { checkDeal, dealToText } from "./deals";
 import { modelLabel } from "./models";
+import { CloudService } from "./cloud";
 
 const VALID_RANGES: ChartRange[] = ["1D", "5D", "1M", "6M", "1A", "5A", "MAX"];
 const MODES: AiMode[] = ["geral", "professor", "app", "financas", "mercado", "compras"];
 const PUBLIC_CHANNELS = new Set(["app:info", "auth:session", "auth:register", "auth:login", "auth:logout", "window:setTheme", "shell:openExternal"]);
+const SYNC_EVERY = 45_000;
 
 /** Mensagem que quem não é Dono vê quando a IA falha. */
 const AI_UNAVAILABLE = "O Assistente não está disponível agora. Tente de novo em alguns minutos.";
@@ -45,6 +47,8 @@ export class Backend {
   readonly auth: AuthService;
   readonly ai: AiService;
   readonly engine: AlertEngine;
+  readonly cloud: CloudService;
+  private syncTimer: ReturnType<typeof setInterval> | null = null;
   private currentUserId: string | null = null;
   private aiControllers = new Map<string, AbortController>();
   private handlers = new Map<string, Handler>();
@@ -55,6 +59,7 @@ export class Backend {
     this.store = new Store(platform.files);
     this.auth = new AuthService(this.store, platform);
     this.ai = new AiService(this.store, platform);
+    this.cloud = new CloudService(this.store);
     this.engine = new AlertEngine(this.store, (userId, n) => this.onNotification(userId, n));
     this.ai.onModelChange = (from, to, reason) => this.notifyOwners(from, to, reason);
     this.register();
@@ -67,10 +72,57 @@ export class Backend {
       void this.ai.catalog().catch(() => undefined);
     }, 2500);
     this.catalogTimer = setInterval(() => void this.ai.catalog().catch(() => undefined), 6 * 3600_000);
+    if (this.cloud.enabled) this.syncTimer = setInterval(() => void this.sync(), SYNC_EVERY);
+  }
+
+  /** Sincroniza a conta aberta com a nuvem (dados, cargo e configuração da IA). */
+  async sync(): Promise<void> {
+    const userId = this.currentUserId;
+    if (!this.cloud.enabled || !userId) return;
+    try {
+      const changed = await this.cloud.pull(userId);
+      const ai = await this.cloud.pullAi(userId);
+      if (ai) this.applyCloudAi(ai);
+      const u = this.store.findUser(userId);
+      if (u?.status === "bloqueado") {
+        this.endSession();
+        this.platform.emit("session:ended", "Esta conta foi bloqueada pelo Dono do aplicativo.");
+      } else if (changed && userId === this.currentUserId) {
+        this.platform.emit("data:changed", u ? this.store.toPublic(u) : null);
+        this.engine.runNow();
+      }
+    } catch (err) {
+      if (err instanceof AppError && err.code === "USER_NOT_FOUND") {
+        this.endSession();
+        this.platform.emit("session:ended", "Esta conta foi excluída.");
+      }
+      // sem internet: tenta de novo no próximo ciclo
+    }
+  }
+
+  private applyCloudAi(ai: { apiKey?: string | null; model?: string; baseUrl?: string }): void {
+    const r = this.ai.resolve();
+    const patch: { apiKey?: string | null; model?: string; baseUrl?: string } = {};
+    if (ai.apiKey !== undefined && (ai.apiKey || null) !== (r.source === "app" ? r.key : null)) patch.apiKey = ai.apiKey || null;
+    if (ai.model !== undefined && ai.model !== r.choice) patch.model = ai.model;
+    if (ai.baseUrl !== undefined && (ai.baseUrl || undefined) !== (this.store.app.ai?.baseUrl || undefined)) patch.baseUrl = ai.baseUrl ?? "";
+    if (Object.keys(patch).length) this.ai.setConfig(patch);
+  }
+
+  private endSession(): void {
+    this.cloud.logout(this.currentUserId);
+    this.currentUserId = null;
+    delete this.store.app.session;
+    this.store.save();
+    this.engine.stop();
+    for (const c of this.aiControllers.values()) c.abort();
+    this.aiControllers.clear();
   }
 
   stop(): void {
     if (this.catalogTimer) clearInterval(this.catalogTimer);
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    if (this.currentUserId) void this.cloud.push(this.currentUserId).catch(() => undefined);
     this.engine.stop();
     this.store.flush();
   }
@@ -171,7 +223,14 @@ export class Backend {
       .getData(userId, "invoices")
       .filter((i) => i.ym === ym && !i.paid)
       .reduce((s, i) => s + i.amount, 0);
-    return { monthBalance: month.balance, invoicesOpen, emergencyReserve: profile.emergencyReserve, monthlyIncome: profile.salary + profile.extraIncome };
+    const accounts = this.store.getData(userId, "accounts");
+    return {
+      monthBalance: month.balance,
+      invoicesOpen,
+      emergencyReserve: profile.emergencyReserve,
+      monthlyIncome: profile.salary + profile.extraIncome,
+      accountsBalance: accounts.length ? accounts.reduce((s, a) => s + a.balance, 0) : undefined,
+    };
   }
 
   private async aiMessages(userId: string, mode: AiMode, messages: { role: "user" | "assistant"; content: string }[], attachment?: string) {
@@ -190,7 +249,7 @@ export class Backend {
 
   private register(): void {
     const p = this.platform;
-    this.on("app:info", () => ({ version: p.version, platform: p.os, kind: p.kind, hasUsers: this.auth.hasUsers(), dataDir: p.dataDir }));
+    this.on("app:info", () => ({ version: p.version, platform: p.os, kind: p.kind, hasUsers: this.cloud.enabled || this.auth.hasUsers(), cloud: this.cloud.enabled, dataDir: p.dataDir }));
 
     // ---- autenticação ----
     this.on("auth:session", () => {
@@ -203,46 +262,102 @@ export class Backend {
       const u = this.store.findUser(s.userId);
       if (!u || u.status !== "ativo") return null;
       this.startSession(u.id, true);
+      void this.sync();
       return this.store.toPublic(u);
     });
-    this.on("auth:register", (a: NewUserInput & { remember?: boolean }) => {
-      const user = this.auth.register({ name: a.name, username: a.username, password: a.password, email: a.email });
+    this.on("auth:register", async (a: NewUserInput & { remember?: boolean }) => {
+      const input = { name: String(a.name ?? ""), username: String(a.username ?? ""), password: String(a.password ?? ""), email: a.email };
+      let user;
+      if (this.cloud.enabled) {
+        this.auth.validateNew(input);
+        user = this.store.toPublic(await this.cloud.register(input, this.auth.localPassword.hash));
+      } else {
+        user = this.auth.register(input);
+      }
       this.startSession(user.id, !!a.remember);
       return user;
     });
-    this.on("auth:login", (a: { username: string; password: string; remember?: boolean }) => {
-      const user = this.auth.login(String(a.username ?? ""), String(a.password ?? ""));
+    this.on("auth:login", async (a: { username: string; password: string; remember?: boolean }) => {
+      const username = String(a.username ?? "");
+      const password = String(a.password ?? "");
+      // Com a nuvem, a conta vale em qualquer aparelho; sem internet, entra com a cópia local.
+      const cloudUser = this.cloud.enabled ? await this.cloud.login(username, password, this.auth.localPassword) : null;
+      const user = cloudUser ? this.store.toPublic(cloudUser) : this.auth.login(username, password);
       this.startSession(user.id, !!a.remember);
+      if (cloudUser) void this.cloud.pullAi(user.id).then((ai) => ai && this.applyCloudAi(ai)).catch(() => undefined);
       return user;
     });
     this.on("auth:logout", () => {
-      this.currentUserId = null;
-      delete this.store.app.session;
-      this.store.save();
-      this.engine.stop();
-      for (const c of this.aiControllers.values()) c.abort();
-      this.aiControllers.clear();
+      this.endSession();
       return true;
     });
-    this.on("auth:changePassword", (a: { current: string; next: string }) => this.auth.changePassword(this.uid(), a.current, a.next));
-    this.on("auth:updateProfile", (a: { name?: string; email?: string; username?: string }) => this.auth.updateOwnProfile(this.uid(), a));
+    this.on("auth:changePassword", async (a: { current: string; next: string }) => {
+      const me = this.store.findUser(this.uid())!;
+      if (this.cloud.enabled) {
+        this.auth.validatePasswordOnly(a.next);
+        await this.cloud.changePassword(me.id, me.username, a.current, a.next);
+        Object.assign(me, (({ hash, salt }) => ({ passwordHash: hash, salt }))(this.auth.localPassword.hash(a.next)));
+        this.store.save();
+        return true;
+      }
+      return this.auth.changePassword(me.id, a.current, a.next);
+    });
+    this.on("auth:updateProfile", async (a: { name?: string; email?: string; username?: string }) => {
+      if (this.cloud.enabled) {
+        const me = this.store.findUser(this.uid())!;
+        if (a.username !== undefined && a.username.trim() !== me.username) throw new AppError("FORBIDDEN", "O nome de usuário não pode ser trocado.");
+        await this.cloud.updateUser(me.id, me.id, { name: a.name, email: a.email });
+      }
+      return this.auth.updateOwnProfile(this.uid(), { name: a.name, email: a.email, username: this.cloud.enabled ? undefined : a.username });
+    });
 
     // ---- usuários (Dono/Administrador) ----
-    this.on("users:list", () => this.auth.listUsers(this.uid()));
-    this.on("users:create", (a: NewUserInput) => this.auth.createUser(this.uid(), a));
-    this.on("users:update", (a: { id: string; patch: { name?: string; username?: string; email?: string; role?: Role; status?: UserStatus } }) =>
-      this.auth.updateUser(this.uid(), a.id, a.patch)
-    );
-    this.on("users:resetPassword", (a: { id: string; password: string }) => this.auth.resetPassword(this.uid(), a.id, a.password));
-    this.on("users:delete", (a: { id: string }) => this.auth.deleteUser(this.uid(), a.id));
+    // Com a nuvem, as regras de cargo também são conferidas no servidor.
+    this.on("users:list", async () => {
+      this.auth.requireManager(this.uid());
+      return this.cloud.enabled ? this.cloud.listUsers(this.uid()) : this.auth.listUsers(this.uid());
+    });
+    this.on("users:create", async (a: NewUserInput) => {
+      if (!this.cloud.enabled) return this.auth.createUser(this.uid(), a);
+      const actor = this.auth.requireManager(this.uid());
+      if (actor.role === "adm" && a.role && a.role !== "usuario") throw new AppError("FORBIDDEN", "Administradores só podem criar contas de Usuário.");
+      this.auth.validateNew(a);
+      await this.cloud.createUser(actor.id, a);
+      return true;
+    });
+    this.on("users:update", async (a: { id: string; patch: { name?: string; username?: string; email?: string; role?: Role; status?: UserStatus } }) => {
+      if (!this.cloud.enabled) return this.auth.updateUser(this.uid(), a.id, a.patch);
+      const actor = this.auth.requireManager(this.uid());
+      if (a.patch.role && actor.role !== "dono") throw new AppError("FORBIDDEN", "Apenas o Dono pode mudar cargos.");
+      await this.cloud.updateUser(actor.id, a.id, { name: a.patch.name, email: a.patch.email, role: a.patch.role, status: a.patch.status });
+      const local = this.store.findUser(a.id);
+      if (local) Object.assign(local, a.patch.role ? { role: a.patch.role } : {}, a.patch.status ? { status: a.patch.status } : {});
+      return true;
+    });
+    this.on("users:resetPassword", async (a: { id: string; password: string }) => {
+      if (!this.cloud.enabled) return this.auth.resetPassword(this.uid(), a.id, a.password);
+      this.auth.validatePasswordOnly(String(a.password ?? ""));
+      return this.cloud.resetPassword(this.auth.requireManager(this.uid()).id, a.id, a.password);
+    });
+    this.on("users:delete", async (a: { id: string }) => {
+      if (!this.cloud.enabled) return this.auth.deleteUser(this.uid(), a.id);
+      await this.cloud.deleteUser(this.auth.requireManager(this.uid()).id, a.id);
+      if (this.store.findUser(a.id)) this.store.removeUser(a.id);
+      return true;
+    });
+    this.on("cloud:sync", async () => {
+      await this.sync();
+      return this.cloud.enabled;
+    });
 
     // ---- dados do usuário ----
     this.on("data:getAll", () => this.store.getAllData(this.uid()));
     this.on("data:set", (a: { key: UserDataKey; value: UserDataMap[UserDataKey] }) => {
       if (!USER_DATA_KEYS.includes(a.key)) throw new AppError("INVALID", "Dado inválido.");
-      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices"].includes(a.key);
+      const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts"].includes(a.key);
       if (isArray !== Array.isArray(a.value) || a.value === null || typeof a.value !== "object") throw new AppError("INVALID", "Formato inválido.");
       this.store.setData(this.uid(), a.key, a.value);
+      this.cloud.schedulePush(this.uid());
       if (a.key === "alerts" || a.key === "portfolio" || a.key === "settings" || a.key === "invoices") this.engine.runNow();
       return true;
     });
@@ -288,8 +403,24 @@ export class Backend {
     );
     this.on("banks:get", () => getBanks());
 
-    this.on("learning:leaderboard", (): LeaderboardEntry[] => {
+    this.on("learning:leaderboard", async (): Promise<LeaderboardEntry[]> => {
       const me = this.uid();
+      if (this.cloud.enabled) {
+        const rows = await this.cloud.leaderboard(me).catch(() => null);
+        if (rows)
+          return rows
+            .map((r) => ({
+              userId: r.id,
+              name: r.name,
+              username: r.username,
+              xp: r.learning?.xp ?? 0,
+              completed: Object.values(r.learning?.completed ?? {}).filter((c) => c.approved).length,
+              avatarHue: r.avatar_hue,
+              isMe: r.id === me,
+            }))
+            .sort((x, y) => y.xp - x.xp)
+            .slice(0, 50);
+      }
       return this.store.users
         .filter((u) => u.status === "ativo")
         .map((u) => {
@@ -313,6 +444,13 @@ export class Backend {
     this.on("ai:setConfig", (a: { apiKey?: string | null; model?: string; baseUrl?: string }) => {
       this.requireOwner();
       this.ai.setConfig(a);
+      if (this.cloud.enabled) {
+        // A chave vale para todas as contas, em qualquer aparelho.
+        const r = this.ai.resolve();
+        void this.cloud
+          .pushAi(this.uid(), { apiKey: r.source === "app" ? r.key : null, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "" })
+          .catch(() => undefined);
+      }
       return this.ai.info(true);
     });
     this.on("ai:catalog", (a: { force?: boolean }) => {

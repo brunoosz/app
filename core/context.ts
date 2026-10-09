@@ -217,6 +217,15 @@ function moneySection(lines: string[], data: UserDataMap, detailed: boolean): vo
     const biggest = [...month.entries].sort((a, b) => b.amount - a.amount).slice(0, 8);
     if (biggest.length) lines.push(`- Maiores lançamentos do mês: ${biggest.map((e) => `${e.expense.description} ${brl(e.amount)} (${e.expense.category})`).join("; ")}`);
   }
+  const accounts = data.accounts ?? [];
+  if (accounts.length) {
+    const total = accounts.reduce((s, a) => s + a.balance, 0);
+    lines.push(`- Saldo nas contas agora (informado pelo usuário): ${brl(total)} — ${accounts.map((a) => `${institutionLabel(a.institution)} ${brl(a.balance)}`).join("; ")}`);
+    const openNow = (data.invoices ?? []).filter((i) => i.ym === ym && !i.paid).reduce((s, i) => s + i.amount, 0);
+    if (openNow) lines.push(`- Depois de pagar as faturas em aberto do mês, sobram ${brl(total - openNow)} nas contas.`);
+  }
+  const extras = month.entries.filter((e) => e.expense.type === "receita");
+  if (extras.length) lines.push(`- Entradas extras do mês: ${extras.map((e) => `${e.expense.description} ${brl(e.amount)}`).join("; ")}`);
   const invoices = (data.invoices ?? []).filter((i) => i.ym >= addMonthsYm(ym, -1));
   if (invoices.length) {
     lines.push("- Faturas de cartão informadas pelo usuário:");
@@ -238,7 +247,7 @@ export const APP_GUIDE = `Telas do Investa e como usar:
 - Aulas: trilha de 30 aulas em 10 módulos. Cada aula termina com um quiz de 3 perguntas; é preciso acertar as 3 para liberar a próxima. Abas Conquistas, Ranking e Glossário.
 - Assistente: esta conversa. Modos: Conversa livre, Professor, Minhas finanças, Analista de mercado, Vale a pena comprar? e Ajuda com o app.
 - Objetivos: "Nova meta" com valor, prazo e onde o dinheiro está aplicado. "Ver projeção" mostra quanto terá no prazo e a comparação entre bancos.
-- Gastos: "Novo lançamento" (gasto ou receita, categoria, forma de pagamento, banco/cartão e parcelas). Seção Faturas: informar a fatura de cada cartão no mês e pedir ajuda ao Assistente. Botões PDF e Excel exportam o mês.
+- Gastos: "Novo lançamento" (gasto ou receita, categoria, forma de pagamento, banco/cartão e parcelas). Seção Faturas: informar a fatura de cada cartão no mês e pedir ajuda ao Assistente. "Minhas contas" guarda o saldo de cada banco e mostra quanto sobra depois da fatura daquele banco; "Recebi dinheiro" registra uma entrada extra (ex.: venda de um videogame) e pode somar ao saldo da conta. Botões PDF e Excel exportam o mês.
 - Vale a pena?: cole o link ou o nome de um produto ou jogo; o app busca o preço e diz se é um bom momento e se cabe no orçamento.
 - Bancos: ranking de bancos e corretoras com o motivo de cada nota, rendimento com o CDI do dia e juros de crédito do Banco Central.
 - Simulador: R$ 100 mil virtuais para comprar e vender a preços reais.

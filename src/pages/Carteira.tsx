@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, MoneyInput, NumberInput, SegmentedControl, Select } from "@/components/ui/form";
 import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { BarList, Donut, Legend } from "@/components/charts/small";
+import { AccountsCard } from "@/components/Accounts";
+import { currentYm, summarizeMonth } from "@shared/finance";
 import { AssetAvatar, AssetPicker, categoryLabel, InstitutionSelect } from "@/components/market";
 
 const FIXED_TYPES: { value: FixedType; label: string; rateType: Holding["rateType"]; rate: number }[] = [
@@ -263,6 +265,10 @@ function FixedRow({ v, onEdit, onDelete }: { v: HoldingView; onEdit: () => void;
 
 export function Carteira() {
   const portfolio = useUserData("portfolio");
+  const expenses = useUserData("expenses");
+  const profile = useUserData("profile");
+  const ym = currentYm();
+  const month = useMemo(() => summarizeMonth(expenses, ym, profile.salary, profile.extraIncome), [expenses, ym, profile.salary, profile.extraIncome]);
   const update = useSession((s) => s.update);
   const { data: ind } = useIndicators();
   const symbols = useMemo(() => [...portfolio.filter((h) => h.symbol).map((h) => h.symbol!), "USDBRL=X", "EURBRL=X"], [portfolio]);
@@ -291,6 +297,9 @@ export function Carteira() {
           </Button>
         }
       />
+
+      {/* Saldo nos bancos: dá para guardar mesmo antes de ter investimentos. */}
+      <AccountsCard ym={ym} summary={month} />
 
       {portfolio.length === 0 ? (
         <Card>

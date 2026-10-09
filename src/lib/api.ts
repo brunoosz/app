@@ -62,6 +62,8 @@ export interface AppInfo {
   platform: string;
   kind: "desktop" | "mobile";
   hasUsers: boolean;
+  /** Contas e dados guardados na nuvem (mesma conta no PC e no celular). */
+  cloud?: boolean;
   dataDir: string;
 }
 

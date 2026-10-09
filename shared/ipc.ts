@@ -11,6 +11,7 @@ export const INVOKE_CHANNELS = [
   "users:update",
   "users:resetPassword",
   "users:delete",
+  "cloud:sync",
   "data:getAll",
   "data:set",
   "notifications:list",
@@ -46,5 +47,5 @@ export const INVOKE_CHANNELS = [
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
 
-export const EVENT_CHANNELS = ["notifications:new", "ai:event", "navigate"] as const;
+export const EVENT_CHANNELS = ["notifications:new", "ai:event", "navigate", "data:changed", "session:ended"] as const;
 export type EventChannel = (typeof EVENT_CHANNELS)[number];

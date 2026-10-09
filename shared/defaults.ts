@@ -43,5 +43,6 @@ export function defaultUserData(): UserDataMap {
     simulator: { cash: SIMULATOR_START_CASH, startedAt: now, positions: [], history: [] },
     chat: [],
     invoices: [],
+    accounts: [],
   };
 }

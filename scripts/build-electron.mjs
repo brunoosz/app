@@ -13,6 +13,11 @@ const common = {
   logLevel: "warning",
   packages: "external",
   alias: { "@shared": path.join(root, "shared") },
+  // Endereço da nuvem (Supabase); vazio = só contas locais.
+  define: {
+    __INVESTA_CLOUD_URL__: JSON.stringify(process.env.INVESTA_CLOUD_URL ?? ""),
+    __INVESTA_CLOUD_KEY__: JSON.stringify(process.env.INVESTA_CLOUD_KEY ?? ""),
+  },
 };
 
 await Promise.all([

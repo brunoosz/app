@@ -41,6 +41,13 @@ function quickVerdict(d: DealCheck, installments: number): { tone: "success" | "
   } else {
     lines.push("Informe o preço para eu calcular se cabe no seu mês.");
   }
+  if (price !== undefined && d.budget.accountsBalance !== undefined) {
+    const afterInvoices = d.budget.accountsBalance - d.budget.invoicesOpen;
+    if (installments <= 1 && price > afterInvoices) {
+      tone = "danger";
+      lines.push(`Hoje você tem ${brl(d.budget.accountsBalance)} nas contas; pagando as faturas, sobram ${brl(afterInvoices)}. Não dá para pagar à vista sem faltar dinheiro.`);
+    }
+  }
 
   if (d.lowestPrice?.priceBrl && price && d.currency === "BRL") {
     const diff = price / d.lowestPrice.priceBrl - 1;
@@ -253,6 +260,12 @@ export function ValeAPena() {
                   <span className="text-muted">Saldo previsto</span>
                   <span className="tabular">{brl(result.budget.monthBalance)}</span>
                 </div>
+                {result.budget.accountsBalance !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-muted">Saldo nas contas</span>
+                    <span className="tabular">{brl(result.budget.accountsBalance)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted">Faturas em aberto</span>
                   <span className="tabular">{brl(result.budget.invoicesOpen)}</span>

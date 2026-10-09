@@ -136,3 +136,5 @@ export function pickBest(ids: string[], exclude: string[] = []): string | undefi
 }
 
 export const FALLBACK_MODEL = "deepseek-ai/deepseek-v4-flash";
+/** Usados quando a lista de modelos da conta não pôde ser carregada. */
+export const FALLBACK_MODELS = [FALLBACK_MODEL, "openai/gpt-oss-120b", "qwen/qwen3-235b-a22b", "meta/llama-4-maverick-17b-128e-instruct", "mistralai/mistral-medium-3-instruct"];

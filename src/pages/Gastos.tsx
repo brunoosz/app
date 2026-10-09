@@ -41,6 +41,7 @@ import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { BarList, Donut, Legend, PALETTE } from "@/components/charts/small";
 import { InstitutionSelect } from "@/components/market";
 import { InvoicesCard } from "@/components/Invoices";
+import { AccountsCard } from "@/components/Accounts";
 import { useAssistant } from "@/store/assistant";
 import { useAsync } from "@/hooks/useAsync";
 
@@ -323,6 +324,7 @@ export function Gastos() {
         </Card>
       </div>
 
+      <AccountsCard ym={ym} summary={summary} />
       <InvoicesCard ym={ym} summary={summary} />
 
       {summary.entries.length === 0 ? (
