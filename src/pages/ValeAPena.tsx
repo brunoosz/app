@@ -23,7 +23,8 @@ const EXAMPLES = [
 /** Leitura rápida sem IA: o preço está bom e cabe no mês? */
 function quickVerdict(d: DealCheck, installments: number): { tone: "success" | "warning" | "danger"; title: string; lines: string[] } {
   const lines: string[] = [];
-  const price = d.currentPrice;
+  // O orçamento é em reais: usa o preço convertido quando a loja cobra em outra moeda.
+  const price = d.currentPriceBrl ?? (d.currency === "BRL" ? d.currentPrice : undefined);
   const perMonth = price ? price / Math.max(1, installments) : undefined;
   const free = d.budget.available ?? d.budget.monthBalance - d.budget.invoicesOpen;
   let tone: "success" | "warning" | "danger" = "success";
@@ -38,6 +39,8 @@ function quickVerdict(d: DealCheck, installments: number): { tone: "success" | "
     } else {
       lines.push(`Cabe no orçamento: sobram ${brl(free - perMonth)} no mês depois da compra.`);
     }
+  } else if (d.currentPrice) {
+    lines.push(`O preço está em ${d.currency}. Informe quanto fica em reais para eu calcular se cabe no seu mês.`);
   } else {
     lines.push("Informe o preço para eu calcular se cabe no seu mês.");
   }

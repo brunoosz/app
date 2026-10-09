@@ -20,9 +20,19 @@ export function markdownToHtml(md: string): string {
   const inline = (t: string) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<i>$1</i>");
   const out: string[] = [];
   let list: "ul" | "ol" | null = null;
+  let table: string[][] = [];
+  const flushTable = () => {
+    if (!table.length) return;
+    const [head, ...rows] = table;
+    out.push(
+      `<table class="md"><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+    );
+    table = [];
+  };
   const close = () => {
     if (list) out.push(`</${list}>`);
     list = null;
+    flushTable();
   };
   for (const raw of md.split("\n")) {
     const line = raw.trim();
@@ -30,6 +40,16 @@ export function markdownToHtml(md: string): string {
       close();
       continue;
     }
+    if (line.startsWith("|")) {
+      if (list) {
+        out.push(`</${list}>`);
+        list = null;
+      }
+      // Linha separadora "|---|---|" não vira linha da tabela.
+      if (!/^\|[\s:|-]+\|?$/.test(line)) table.push(tableCells(line));
+      continue;
+    }
+    flushTable();
     const h = /^#{1,4}\s+(.*)$/.exec(line);
     const ul = /^[-*•]\s+(.*)$/.exec(line);
     const ol = /^\d+[.)]\s+(.*)$/.exec(line);
@@ -53,12 +73,17 @@ export function markdownToHtml(md: string): string {
   return out.join("");
 }
 
+function tableCells(line: string): string[] {
+  return line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+}
+
 /** Markdown para texto corrido (planilha e PDF do celular). */
 export function markdownToText(md: string): string[] {
   return md
     .split("\n")
     .map((l) => l.trim().replace(/^#{1,4}\s+/, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^[-*•]\s+/, "• "))
-    .filter((l) => l && !l.startsWith("|"));
+    .filter((l) => l && !/^\|[\s:|-]+\|?$/.test(l))
+    .map((l) => (l.startsWith("|") ? tableCells(l).join("  ·  ") : l));
 }
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -178,7 +203,7 @@ export async function buildExcel(input: ReportInput): Promise<Uint8Array> {
     an.columns = [{ width: 110 }];
     an.getCell("A1").value = "Análise do Assistente";
     an.getCell("A1").font = { bold: true, size: 14 };
-    for (const line of markdownToText(input.aiAnalysis)) {
+    for (const line of markdownToText(input.aiAnalysis).map(latin1)) {
       const r = an.addRow([line]);
       r.getCell(1).alignment = { wrapText: true, vertical: "top" };
     }
@@ -318,7 +343,7 @@ export async function buildPdf(input: ReportInput): Promise<Uint8Array> {
     let x = M;
     cols.forEach((c, i) => {
       const right = i === cols.length - 1;
-      const text = doc.splitTextToSize(c, widths[i] - 6)[0] ?? "";
+      const text = doc.splitTextToSize(latin1(c), widths[i] - 6)[0] ?? "";
       doc.text(text, right ? x + widths[i] : x, y, { align: right ? "right" : "left" });
       x += widths[i];
     });
@@ -378,12 +403,30 @@ body{font-family:Inter,Segoe UI,Arial,sans-serif;color:#0B0F1A;margin:0;font-siz
 .top h1{margin:0;font-size:20px}.top p{margin:6px 0 0;color:#94A3B8;font-size:11px}
 .body{padding:24px 40px}
 h2,h3{margin:18px 0 6px}ul{padding-left:20px}li{margin:3px 0}
+table.md{border-collapse:collapse;width:100%;margin:8px 0}table.md th,table.md td{border:1px solid #E2E8F0;padding:5px 8px;text-align:left}table.md th{background:#F1F5F9}
 footer{padding:16px 40px;color:#64748B;font-size:10px;border-top:1px solid #E2E8F0}
 </style></head><body>
 <div class="top"><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div>
 <div class="body">${markdownToHtml(markdown.replace(/^\s*[-*]\s*\[( |x|X)\]/gm, (_m, c) => (c.trim() ? "- ☑" : "- ☐")))}</div>
 <footer>Gerado pelo aplicativo Investa. Conteúdo educacional, não é recomendação individual de investimento.</footer>
 </body></html>`;
+}
+
+/** A fonte padrão do PDF do celular só tem Latin-1: troca símbolos comuns e tira emojis. */
+function latin1(t: string): string {
+  return t
+    .replace(/≈/g, "~")
+    .replace(/[→⇒➜]/g, "->")
+    .replace(/[←]/g, "<-")
+    .replace(/[–—]/g, "-")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/…/g, "...")
+    .replace(/[✅✔☑]/g, "[x]")
+    .replace(/[☐]/g, "[ ]")
+    .replace(/≥/g, ">=")
+    .replace(/≤/g, "<=")
+    .replace(/[^\x00-\xFF]/g, "");
 }
 
 /** O mesmo documento em PDF, sem navegador (celular). */
@@ -398,18 +441,20 @@ export async function buildDocPdf(title: string, subtitle: string, markdown: str
   doc.setTextColor(248, 250, 252);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(17);
-  doc.text(doc.splitTextToSize(title, W - 2 * M)[0] ?? title, M, 40);
+  doc.text(doc.splitTextToSize(latin1(title), W - 2 * M)[0] ?? latin1(title), M, 40);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(148, 163, 184);
-  doc.text(subtitle, M, 62);
+  doc.text(latin1(subtitle), M, 62);
   let y = 108;
   doc.setTextColor(11, 15, 26);
   const lines = markdown
     .replace(/^\s*[-*]\s*\[( |x|X)\]/gm, (_m, c) => (c.trim() ? "- [feito]" : "- [ ]"))
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("|"));
+    .filter((l) => l && !/^\|[\s:|-]+\|?$/.test(l))
+    .map((l) => (l.startsWith("|") ? tableCells(l).join("   ·   ") : l))
+    .map(latin1);
   for (const line of lines) {
     const heading = /^#{1,4}\s/.test(line);
     const text = line.replace(/^#{1,4}\s*/, "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/^[-*•]\s+/, "•  ");

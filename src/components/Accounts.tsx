@@ -3,7 +3,7 @@ import { HandCoins, Landmark, Plus, Trash } from "lucide-react";
 import clsx from "clsx";
 import type { BankAccount, Expense } from "@shared/types";
 import { bankById, institutionLabel } from "@shared/banks";
-import { INCOME_CATEGORIES, type MonthSummary } from "@shared/finance";
+import { INCOME_CATEGORIES, type MonthSummary, localIsoDate } from "@shared/finance";
 import { uid } from "@/lib/api";
 import { brl, dateBR } from "@/lib/format";
 import { useSession, useUserData } from "@/store/session";
@@ -14,7 +14,7 @@ import { Field, Input, MoneyInput, Select, Toggle } from "@/components/ui/form";
 import { Sheet } from "@/components/ui/Sheet";
 import { InstitutionSelect } from "@/components/market";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => localIsoDate();
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
 function BankMark({ id }: { id: string }) {

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, Flame, GraduationCap, Plus, Target, Wallet } from "lucide-react";
 import type { ChartRange } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
-import { pendingFor, currentYm, monthBudget, weekSummary, projectGoal, ratesFromIndicators, summarizeMonth } from "@shared/finance";
+import { pendingFor, currentYm, monthBudget, weekSummary, projectGoal, ratesFromIndicators, summarizeMonth, localIsoDate } from "@shared/finance";
 import { institutionLabel } from "@shared/banks";
 import clsx from "clsx";
 import { levelFor, nextLesson, TOTAL_LESSONS } from "@shared/learning";
@@ -38,7 +38,7 @@ function marketOpen(): boolean {
 function WeekCard() {
   const expenses = useUserData("expenses");
   const bills = useUserData("bills");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate();
   const w = useMemo(() => weekSummary(expenses, bills, today), [expenses, bills, today]);
   const diff = w.previous ? Math.round(((w.spent - w.previous) / w.previous) * 100) : null;
   return (

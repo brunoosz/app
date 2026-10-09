@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Minus, PiggyBank, Plus, Trash } from "lucide-react";
 import type { SavingBox } from "@shared/types";
+import { localIsoDate } from "@shared/finance";
 import { uid } from "@/lib/api";
 import { brl, dateBR } from "@/lib/format";
 import { useSession, useUserData } from "@/store/session";
@@ -97,7 +98,7 @@ export function BoxesCard() {
     update("boxes", (list) =>
       list.map((x) =>
         x.id === b.id
-          ? { ...x, balance: round2(Math.max(0, x.balance + amount)), history: [...x.history, { date: new Date().toISOString().slice(0, 10), amount, note: amount > 0 ? "Depósito extra" : "Retirada" }].slice(-120) }
+          ? { ...x, balance: round2(Math.max(0, x.balance + amount)), history: [...x.history, { date: localIsoDate(), amount, note: amount > 0 ? "Depósito extra" : "Retirada" }].slice(-120) }
           : x
       )
     );

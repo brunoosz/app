@@ -53,7 +53,7 @@ function Message({ m, streaming, status, onRetry, onDelete }: { m: ChatMessage; 
         <div className="flex flex-col items-end max-w-[78%]">
           <div className="rounded-[22px] rounded-br-md bg-brand text-white px-4 py-2.5 text-[15px] whitespace-pre-wrap shadow-glow">{m.content}</div>
           {onDelete && (
-            <button className={clsx(ACTION, "mt-1 opacity-0 group-hover:opacity-100 max-sm:opacity-60 transition")} onClick={onDelete} aria-label="Apagar mensagem">
+            <button className={clsx(ACTION, "mt-1 opacity-0 group-hover:opacity-100 max-sm:opacity-60 [@media(hover:none)]:opacity-70 transition")} onClick={onDelete} aria-label="Apagar mensagem">
               <Trash2 size={13} /> Apagar
             </button>
           )}
@@ -128,7 +128,7 @@ function Message({ m, streaming, status, onRetry, onDelete }: { m: ChatMessage; 
           </div>
         )}
         {!streaming && m.content && (
-          <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 max-sm:opacity-60 transition">
+          <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 max-sm:opacity-60 [@media(hover:none)]:opacity-70 transition">
             <span className="text-[11.5px] text-muted mr-1">{timeBR(m.createdAt)}</span>
             <button
               className="h-7 px-2 rounded-lg text-[12px] text-muted hover:text-fg hover:bg-line/10 inline-flex items-center gap-1"
@@ -243,7 +243,12 @@ export function Assistente() {
         return;
       }
       if (ev.type === "error") {
-        update("chat", (list) => list.map((m) => (m.id === req.messageId ? { ...m, content: ev.data ?? "O Assistente não respondeu. Tente de novo.", error: true } : m)));
+        const partial = bufferRef.current;
+        const msg = ev.data ?? "O Assistente não respondeu. Tente de novo.";
+        // Se a resposta já tinha começado, mantém o que chegou e avisa no fim.
+        update("chat", (list) =>
+          list.map((m) => (m.id === req.messageId ? (partial ? { ...m, content: `${partial}\n\n_${msg}_` } : { ...m, content: msg, error: true }) : m))
+        );
       }
       if (ev.type === "done" || ev.type === "error") {
         requestRef.current = null;
@@ -252,6 +257,21 @@ export function Assistente() {
       }
     });
   }, [update, scrollDown]);
+
+  // Saiu da tela no meio da resposta: cancela e não deixa "Pensando…" para sempre.
+  useEffect(
+    () => () => {
+      const req = requestRef.current;
+      if (!req) return;
+      void api.ai.cancel(req.requestId);
+      requestRef.current = null;
+      const partial = bufferRef.current;
+      useSession.getState().update("chat", (list) =>
+        list.map((m) => (m.id === req.messageId ? (partial ? { ...m, content: `${partial}\n\n_Resposta interrompida._` } : { ...m, content: "Resposta interrompida. Toque em “Tentar de novo”.", error: true }) : m))
+      );
+    },
+    []
+  );
 
   const send = useCallback(
     async (text: string, opts: { mode?: AiMode; history?: ChatMessage[]; attachment?: string } = {}) => {

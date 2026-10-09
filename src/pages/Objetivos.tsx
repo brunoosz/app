@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { CalendarClock, ChartLine, Landmark, Pencil, Plus, Target, Trash, TrendingUp } from "lucide-react";
 import clsx from "clsx";
 import type { AllocationType, Goal, GoalAllocation, RateType } from "@shared/types";
@@ -120,14 +121,14 @@ function AllocationEditor({ a, onChange, onRemove }: { a: GoalAllocation; onChan
   );
 }
 
-function GoalSheet({ open, initial, onClose }: { open: boolean; initial: Goal | null; onClose: () => void }) {
+function GoalSheet({ open, initial, preset, onClose }: { open: boolean; initial: Goal | null; preset?: Partial<Goal>; onClose: () => void }) {
   const update = useSession((s) => s.update);
   const toast = useUi((s) => s.toast);
   const [g, setG] = useState<Goal>(initial ?? newGoal());
   const [lastOpen, setLastOpen] = useState(false);
   if (open !== lastOpen) {
     setLastOpen(open);
-    if (open) setG(initial ? structuredClone(initial) : newGoal());
+    if (open) setG(initial ? structuredClone(initial) : { ...newGoal(), ...preset });
   }
   const valid = g.name.trim() && g.target > 0 && g.deadline >= currentYm();
   const save = () => {
@@ -324,7 +325,17 @@ export function Objetivos() {
   const update = useSession((s) => s.update);
   const { data: ind } = useIndicators();
   const rates = useMemo(() => ratesFromIndicators(ind), [ind]);
-  const [sheet, setSheet] = useState<{ open: boolean; goal: Goal | null }>({ open: false, goal: null });
+  // Vindo do "Meu plano": /objetivos?novo=1&nome=…&valor=…&prazo=AAAA-MM abre uma meta já preenchida.
+  const [params, setParams] = useSearchParams();
+  const [preset] = useState<Partial<Goal> | undefined>(() =>
+    params.get("novo")
+      ? { name: params.get("nome") ?? "", target: Number(params.get("valor")) || 0, ...(params.get("prazo") ? { deadline: params.get("prazo")! } : {}) }
+      : undefined
+  );
+  const [sheet, setSheet] = useState<{ open: boolean; goal: Goal | null }>({ open: !!preset, goal: null });
+  useEffect(() => {
+    if (params.get("novo")) setParams({}, { replace: true });
+  }, [params, setParams]);
   const [detail, setDetail] = useState<Goal | null>(null);
   const [toDelete, setToDelete] = useState<Goal | null>(null);
   const projections = useMemo(() => new Map(goals.map((g) => [g.id, projectGoal(g, rates)])), [goals, rates]);
@@ -448,7 +459,7 @@ export function Objetivos() {
         </div>
       )}
 
-      <GoalSheet open={sheet.open} initial={sheet.goal} onClose={() => setSheet({ open: false, goal: null })} />
+      <GoalSheet open={sheet.open} initial={sheet.goal} preset={sheet.goal ? undefined : preset} onClose={() => setSheet({ open: false, goal: null })} />
       {detail && <GoalDetail goal={goals.find((g) => g.id === detail.id) ?? detail} rates={rates} onClose={() => setDetail(null)} />}
       <ConfirmDialog
         open={!!toDelete}

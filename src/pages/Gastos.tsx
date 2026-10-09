@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import type { Expense, PaymentMethod } from "@shared/types";
-import { addMonthsYm, pendingFor, currentYm, monthBudget, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry } from "@shared/finance";
+import { addMonthsYm, pendingFor, currentYm, monthBudget, EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_LABEL, summarizeMonth, ymLabel, type MonthEntry, localIsoDate } from "@shared/finance";
 import { institutionLabel } from "@shared/banks";
 import { api, uid } from "@/lib/api";
 import { brl, dateBR, pct } from "@/lib/format";
@@ -76,7 +76,7 @@ function emptyExpense(type: Expense["type"] = "despesa"): Expense {
     type,
     description: "",
     amount: 0,
-    date: new Date().toISOString().slice(0, 10),
+    date: localIsoDate(),
     category: type === "despesa" ? "Alimentação" : "Freelance",
     method: type === "despesa" ? "credito" : "pix",
     institution: "",

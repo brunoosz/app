@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CalendarClock, Check, Plus, Repeat, Trash } from "lucide-react";
 import clsx from "clsx";
 import type { Bill, Expense } from "@shared/types";
-import { billDueDate, EXPENSE_CATEGORIES, ymLabel } from "@shared/finance";
+import { billDueDate, EXPENSE_CATEGORIES, ymLabel, localIsoDate } from "@shared/finance";
 import { uid } from "@/lib/api";
 import { brl } from "@/lib/format";
 import { useSession, useUserData } from "@/store/session";
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, MoneyInput, Select, Toggle } from "@/components/ui/form";
 import { Sheet } from "@/components/ui/Sheet";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => localIsoDate();
 
 function daysUntil(date: string): number {
   return Math.round((Date.parse(`${date}T12:00:00`) - Date.parse(`${todayIso()}T12:00:00`)) / 86_400_000);
@@ -114,7 +114,7 @@ export function BillsCard({ ym }: { ym: string }) {
   const pay = (b: Bill) => {
     const due = billDueDate(b, ym);
     const date = ym === todayIso().slice(0, 7) ? todayIso() : due;
-    const entry: Expense = { id: uid(), type: "despesa", description: b.name, amount: b.amount, date, category: b.category, method: "pix", institution: b.institution ?? "", installments: 1, notes: "Conta fixa" };
+    const entry: Expense = { id: uid(), type: "despesa", description: b.name, amount: b.amount, date, category: b.category, method: "pix", institution: b.institution ?? "", installments: 1, notes: "Conta fixa", billId: b.id };
     update("expenses", (list) => [entry, ...list]);
     update("bills", (list) => list.map((x) => (x.id === b.id ? { ...x, paid: [...new Set([...x.paid, ym])] } : x)));
     toast({ title: `${b.name} paga`, message: `${brl(b.amount)} lançado em Gastos.`, tone: "success" });
@@ -122,7 +122,7 @@ export function BillsCard({ ym }: { ym: string }) {
   const unpay = (b: Bill) => {
     update("bills", (list) => list.map((x) => (x.id === b.id ? { ...x, paid: x.paid.filter((m) => m !== ym) } : x)));
     update("expenses", (list) => {
-      const i = list.findIndex((e) => e.description === b.name && e.notes === "Conta fixa" && e.date.startsWith(ym));
+      const i = list.findIndex((e) => (e.billId ? e.billId === b.id : e.description === b.name && e.notes === "Conta fixa") && e.date.startsWith(ym));
       return i < 0 ? list : list.filter((_, j) => j !== i);
     });
   };

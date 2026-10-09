@@ -105,7 +105,11 @@ export async function installMobileBridge(): Promise<void> {
           return res;
         } catch (err) {
           if (init.signal?.aborted) throw err;
+          // Só desiste do streaming se a rede nativa funcionar (era bloqueio do WebView,
+          // não falta de internet).
+          const res = await nativeFetch(url, init);
           webStreams = false;
+          return res;
         }
       }
       return nativeFetch(url, init);

@@ -88,7 +88,7 @@ function Notifications() {
                   </div>
                   <p className="text-[14px] mt-1.5 text-fg/85">{n.message}</p>
                 </button>
-                <button onClick={() => void api.notifications.remove(n.id).then(setNotifications)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted opacity-0 group-hover:opacity-100 hover:text-danger hover:bg-danger/10 transition" aria-label="Excluir">
+                <button onClick={() => void api.notifications.remove(n.id).then(setNotifications)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 hover:text-danger hover:bg-danger/10 transition" aria-label="Excluir">
                   <Trash size={15} />
                 </button>
               </div>

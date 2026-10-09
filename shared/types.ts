@@ -144,6 +144,8 @@ export interface Expense {
   institution: string;
   installments: number;
   notes?: string;
+  /** Conta fixa que gerou este lançamento ("Paguei"). */
+  billId?: string;
 }
 
 export type AlertKind = "preco-acima" | "preco-abaixo" | "variacao-dia" | "abaixo-media" | "lembrete";
@@ -636,6 +638,8 @@ export interface DealCheck {
   source?: string;
   url?: string;
   currentPrice?: number;
+  /** Preço atual em reais (convertido pelo dólar do dia quando a loja cobra em outra moeda). */
+  currentPriceBrl?: number;
   currency: string;
   regularPrice?: number;
   discountPercent?: number;

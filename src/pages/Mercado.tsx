@@ -92,7 +92,7 @@ function QuoteRow({ symbol, q, name, favorite, failed, onFavorite, onHide }: { s
       </div>
       <ChangePill value={q?.changePercent} />
       <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onFavorite} className={clsx("h-8 w-8 rounded-lg flex items-center justify-center transition", favorite ? "text-warning" : "text-muted/50 hover:text-fg opacity-0 group-hover:opacity-100")} title={favorite ? "Remover dos favoritos" : "Favoritar"}>
+        <button onClick={onFavorite} className={clsx("h-8 w-8 rounded-lg flex items-center justify-center transition", favorite ? "text-warning" : "text-muted/50 hover:text-fg opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100")} title={favorite ? "Remover dos favoritos" : "Favoritar"}>
           <Star size={17} fill={favorite ? "currentColor" : "none"} />
         </button>
         <button onClick={onHide} className="h-8 w-8 rounded-lg hidden sm:flex items-center justify-center text-muted/50 hover:text-fg opacity-0 group-hover:opacity-100 transition" title="Ocultar da lista">

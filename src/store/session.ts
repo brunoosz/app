@@ -91,3 +91,15 @@ export function isManager(user: PublicUser | null): boolean {
 export function isOwner(user: PublicUser | null): boolean {
   return user?.role === "dono";
 }
+
+/**
+ * Aplica dados que vieram de outro aparelho sem desfazer o que a pessoa acabou
+ * de mudar aqui: as partes com gravação pendente ficam com o valor local.
+ */
+export function applyRemoteData(user: PublicUser, data: UserDataMap): void {
+  const s = useSession.getState();
+  if (!s.user || s.user.id !== user.id) return;
+  const merged = { ...data } as UserDataMap;
+  for (const key of pending.keys()) (merged as unknown as Record<string, unknown>)[key] = s.data[key];
+  useSession.setState({ user: { ...s.user, ...user }, data: merged });
+}

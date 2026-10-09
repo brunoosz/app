@@ -83,16 +83,30 @@ export async function fetchWithTimeout(url: string, init: RequestInit = {}, time
   }
 }
 
+/** Lê o corpo com prazo: o tempo-limite do fetch acaba quando chegam os cabeçalhos. */
+export function readText(res: Response, ms = 15_000): Promise<string> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    res.text().finally(() => clearTimeout(timer)),
+    new Promise<string>((_, reject) => {
+      timer = setTimeout(() => {
+        void res.body?.cancel().catch(() => undefined);
+        reject(new Error("A resposta demorou demais."));
+      }, ms);
+    }),
+  ]);
+}
+
 export async function getJson<T>(url: string, init: RequestInit = {}, timeoutMs?: number): Promise<T> {
   const res = await fetchWithTimeout(url, { ...init, headers: { Accept: "application/json", ...(init.headers as Record<string, string>) } }, timeoutMs);
-  if (!res.ok) throw new HttpError(res.status, url, await res.text().catch(() => ""));
-  return (await res.json()) as T;
+  if (!res.ok) throw new HttpError(res.status, url, await readText(res, 5_000).catch(() => ""));
+  return JSON.parse(await readText(res, timeoutMs ?? 15_000)) as T;
 }
 
 export async function getText(url: string, init: RequestInit = {}, timeoutMs?: number): Promise<string> {
   const res = await fetchWithTimeout(url, init, timeoutMs);
   if (!res.ok) throw new HttpError(res.status, url);
-  return res.text();
+  return readText(res, timeoutMs ?? 15_000);
 }
 
 interface CacheEntry<T> {

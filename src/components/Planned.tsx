@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { CalendarRange, Check, ChevronDown, FileDown, Plus, RotateCcw, Sparkles, Trash } from "lucide-react";
 import clsx from "clsx";
 import type { Expense, PlannedExpense } from "@shared/types";
-import { monthsUntil } from "@shared/finance";
+import { monthsUntil, localIsoDate } from "@shared/finance";
 import { api, uid } from "@/lib/api";
 import { brl, dateBR } from "@/lib/format";
 import { useSession, useUserData } from "@/store/session";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, MoneyInput } from "@/components/ui/form";
 import { Sheet } from "@/components/ui/Sheet";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => localIsoDate();
 
 function PlannedSheet({ open, initial, onClose }: { open: boolean; initial: PlannedExpense | null; onClose: () => void }) {
   const update = useSession((s) => s.update);

@@ -5,7 +5,7 @@
 // brasileiras não têm API pública de histórico, então o app indica onde
 // conferir.
 import type { DealCheck, DealOffer } from "@shared/types";
-import { cached, fetchWithTimeout, getJson } from "./http";
+import { cached, fetchWithTimeout, getJson, readText } from "./http";
 import { getQuotes } from "./yahoo";
 
 const CHEAPSHARK = "https://www.cheapshark.com/api/1.0";
@@ -171,7 +171,8 @@ function storeName(url: string): string {
   return host;
 }
 
-const GAME_HINT = /\b(jogo|game|steam|epic|gog|playstation|ps5|xbox|nintendo|switch|dlc)\b/i;
+// Só palavras que indicam um jogo de PC; "ps5", "xbox" ou "switch" costumam ser o console (um produto).
+const GAME_HINT = /\b(jogo|game|steam|epic|gog|dlc)\b/i;
 
 export interface DealInput {
   query: string;
@@ -270,7 +271,7 @@ export async function checkDeal(input: DealInput, budget: DealCheck["budget"]): 
           );
           // Links curtos (meli.la, a.co, amzn.to) chegam na página do produto depois do redirecionamento.
           finalUrl = res.url || url;
-          const page = extractProduct(await res.text());
+          const page = extractProduct(await readText(res, 20_000));
           if (!page.price && /mercadoli(vre|bre)\.com/i.test(finalUrl) && finalUrl !== url) p = await mercadoLivreApi(finalUrl);
           p = p?.price ? { ...page, ...p } : { ...p, ...page };
         }
@@ -309,6 +310,7 @@ export async function checkDeal(input: DealInput, budget: DealCheck["budget"]): 
     result.currency = "BRL";
     notes.push("Preço informado por você.");
   }
+  if (result.currentPrice) result.currentPriceBrl = result.currency === "BRL" ? result.currentPrice : result.currency === "USD" ? toBrl(result.currentPrice) : undefined;
   result.title ??= url ? undefined : query;
   return result;
 }

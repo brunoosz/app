@@ -205,6 +205,11 @@ export function entriesForMonth(expenses: Expense[], ym: string): MonthEntry[] {
   return out.sort((a, b) => b.expense.date.localeCompare(a.expense.date));
 }
 
+/** Data de hoje (AAAA-MM-DD) no fuso do aparelho, e não em UTC (depois das 21h no Brasil o UTC já é amanhã). */
+export function localIsoDate(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
@@ -296,14 +301,30 @@ export function plannedPending(planned: PlannedExpense[], ym: string): number {
   return round2(planned.filter((p) => !p.done && p.date.startsWith(ym)).reduce((s, p) => s + p.amount, 0));
 }
 
-/** Quanto as caixinhas ativas guardam por mês (sai do disponível). */
-export function boxesMonthly(boxes: SavingBox[]): number {
-  return round2(boxes.filter((b) => b.active && (!b.target || b.balance < b.target)).reduce((s, b) => s + b.monthly, 0));
+/**
+ * Quanto as caixinhas separam no mês (sai do disponível): o que já foi
+ * depositado no mês, ou o que ainda vai ser (limitado ao que falta para a meta).
+ */
+export function boxesMonthly(boxes: SavingBox[], ym?: string): number {
+  return round2(
+    boxes.reduce((s, b) => {
+      const deposited = ym ? b.history.filter((h) => h.date.startsWith(ym) && h.note === "Depósito automático").reduce((x, h) => x + h.amount, 0) : 0;
+      if (deposited > 0) return s + deposited;
+      if (!b.active) return s;
+      const left = b.target ? Math.max(0, b.target - b.balance) : b.monthly;
+      return s + Math.min(b.monthly, left);
+    }, 0)
+  );
 }
 
-/** Contas fixas não pagas + gastos planejados do mês + caixinhas: já comprometidos. */
-export function pendingFor(bills: Bill[], planned: PlannedExpense[], ym: string, boxes: SavingBox[] = []): number {
-  return round2(billsPending(bills, ym) + plannedPending(planned, ym) + boxesMonthly(boxes));
+/**
+ * Contas fixas não pagas + gastos planejados do mês + caixinhas: já
+ * comprometidos. Em meses que já passaram, nada fica "pendente" (contas pagas já
+ * viraram lançamento e as caixinhas de hoje não existiam lá).
+ */
+export function pendingFor(bills: Bill[], planned: PlannedExpense[], ym: string, boxes: SavingBox[] = [], today = new Date()): number {
+  if (ym < currentYm(today)) return 0;
+  return round2(billsPending(bills, ym) + plannedPending(planned, ym) + boxesMonthly(boxes, ym));
 }
 
 /** Meses inteiros até uma data (mínimo 1), para dividir quanto guardar por mês. */

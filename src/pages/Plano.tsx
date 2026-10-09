@@ -234,7 +234,16 @@ export function Plano() {
             <Button size="sm" variant="secondary" icon={Rocket} onClick={() => navigate("/carteira?novo=1")}>
               Registrar meu primeiro investimento
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => navigate("/objetivos")}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                const d = new Date();
+                d.setMonth(d.getMonth() + Math.round(answers.years * 12));
+                const prazo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                navigate(`/objetivos?novo=1&nome=${encodeURIComponent(answers.goal)}&valor=${Math.round(end.value)}&prazo=${prazo}`);
+              }}
+            >
               Criar uma meta com esse objetivo
             </Button>
           </div>

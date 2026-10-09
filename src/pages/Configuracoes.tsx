@@ -193,7 +193,8 @@ function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => void })
       setForm({ name: user.name, username: user.username, email: user.email ?? "" });
       setError(null);
     }
-  }, [open, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const save = async () => {
     setSaving(true);
     try {
@@ -246,9 +247,11 @@ function FinanceSheet({ open, onClose }: { open: boolean; onClose: () => void })
   const toast = useUi((s) => s.toast);
   const [p, setP] = useState<FinancialProfile>(profile);
   const [section, setSection] = useState<"renda" | "gastos" | "investir" | "perfil">("renda");
+  // Só recarrega ao abrir: uma atualização vinda da nuvem não apaga o que está sendo digitado.
   useEffect(() => {
     if (open) setP(profile);
-  }, [open, profile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   return (
     <Sheet
       open={open}

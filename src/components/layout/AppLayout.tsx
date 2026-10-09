@@ -6,7 +6,7 @@ import clsx from "clsx";
 import type { AppNotification, PublicUser } from "@shared/types";
 import { api, platform } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
-import { isManager, useSession } from "@/store/session";
+import { applyRemoteData, isManager, useSession } from "@/store/session";
 import { useUi } from "@/store/ui";
 import { Toaster } from "@/components/ui/Toaster";
 import { Sheet } from "@/components/ui/Sheet";
@@ -133,6 +133,7 @@ const PRIVACY_KEY = "investa-privacidade";
 /** Modo privacidade: esconde os valores (útil em público). Fica salvo neste aparelho. */
 export function applyPrivacy(on: boolean): void {
   document.documentElement.classList.toggle("privacy", on);
+  window.dispatchEvent(new Event("investa:privacy"));
 }
 
 function PrivacyButton() {
@@ -262,9 +263,8 @@ export function AppLayout() {
     const offNav = api.on<string>("navigate", (path) => navigate(path));
     // Mudanças feitas em outro aparelho chegaram pela nuvem.
     const offData = api.on<PublicUser | null>("data:changed", (user) => {
-      const s = useSession.getState();
-      if (!user || !s.user) return;
-      void api.data.getAll().then((data) => useSession.setState({ user: { ...s.user!, ...user }, data }));
+      if (!user || !useSession.getState().user) return;
+      void api.data.getAll().then((data) => applyRemoteData(user, data));
     });
     const offEnded = api.on<string>("session:ended", (message) => {
       void useSession.getState().signOut();

@@ -18,7 +18,7 @@ import { Field, Input, MoneyInput, NumberInput, SegmentedControl, Select } from 
 import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { BarList, Donut, Legend } from "@/components/charts/small";
 import { AccountsCard } from "@/components/Accounts";
-import { currentYm, summarizeMonth } from "@shared/finance";
+import { currentYm, summarizeMonth, localIsoDate } from "@shared/finance";
 import { AssetAvatar, AssetPicker, categoryLabel, InstitutionSelect } from "@/components/market";
 
 const FIXED_TYPES: { value: FixedType; label: string; rateType: Holding["rateType"]; rate: number }[] = [
@@ -42,7 +42,7 @@ function rateLabel(h: Holding): string {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localIsoDate();
 }
 
 function emptyHolding(kind: Holding["kind"]): Holding {
@@ -218,7 +218,7 @@ function VariableRow({ v, onEdit, onDelete }: { v: HoldingView; onEdit: () => vo
           {brl(v.gain)}
         </div>
       </div>
-      <div className="hidden md:flex gap-1 opacity-0 group-hover:opacity-100 transition">
+      <div className="flex gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition">
         <Button size="icon-sm" variant="ghost" icon={Pencil} onClick={onEdit} aria-label="Editar" />
         <Button size="icon-sm" variant="ghost" icon={Trash} onClick={onDelete} aria-label="Excluir" />
       </div>
@@ -255,7 +255,7 @@ function FixedRow({ v, onEdit, onDelete }: { v: HoldingView; onEdit: () => void;
           +{brl(v.gain)} · líquido {brl(v.netValue)}
         </div>
       </div>
-      <div className="hidden md:flex gap-1 opacity-0 group-hover:opacity-100 transition">
+      <div className="flex gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition">
         <Button size="icon-sm" variant="ghost" icon={Pencil} onClick={onEdit} aria-label="Editar" />
         <Button size="icon-sm" variant="ghost" icon={Trash} onClick={onDelete} aria-label="Excluir" />
       </div>
