@@ -510,6 +510,16 @@ export class Backend {
       }
       return this.ai.info(true);
     });
+    this.on("ai:logs", () => {
+      this.requireOwner();
+      return this.store.app.aiLog ?? [];
+    });
+    this.on("ai:logs:clear", () => {
+      this.requireOwner();
+      this.store.app.aiLog = [];
+      this.store.save();
+      return true;
+    });
     this.on("ai:catalog", (a: { force?: boolean }) => {
       this.requireOwner();
       return this.ai.catalog(!!a.force);

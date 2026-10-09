@@ -1,4 +1,5 @@
 import type {
+  AiLogEntry,
   SavingPlan,
   WealthAnswers,
   WealthPlan,
@@ -129,6 +130,8 @@ export const api = {
     chat: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], mode: AiMode, attachment?: string, web?: boolean) =>
       call<boolean>("ai:chat", { requestId, messages, mode, attachment, web }),
     testSearch: (key: string) => call<number>("search:test", { key }),
+    logs: () => call<AiLogEntry[]>("ai:logs"),
+    clearLogs: () => call<boolean>("ai:logs:clear"),
     cancel: (requestId: string) => call<boolean>("ai:cancel", { requestId }),
   },
 

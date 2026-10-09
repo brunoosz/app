@@ -172,7 +172,7 @@ function MobileNav() {
   const signOut = useSession((s) => s.signOut);
   const [more, setMore] = useState(false);
   const main = ALL_NAV.filter((i) => ["/", "/mercado", "/aulas", "/assistente"].includes(i.to));
-  const rest = ALL_NAV.filter((i) => !main.includes(i) && (!i.managerOnly || isManager(user)));
+  const rest = ALL_NAV.filter((i) => !main.includes(i) && (!i.managerOnly || isManager(user)) && (!i.ownerOnly || user?.role === "dono"));
   return (
     <>
       <nav className="sm:hidden glass border-t border-line/10 grid grid-cols-5 h-[64px] shrink-0">

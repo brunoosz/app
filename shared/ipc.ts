@@ -17,6 +17,8 @@ export const INVOKE_CHANNELS = [
   "plans:wealth",
   "search:test",
   "voice:listen",
+  "ai:logs",
+  "ai:logs:clear",
   "backup:export",
   "backup:import",
   "data:getAll",

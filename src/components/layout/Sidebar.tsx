@@ -78,7 +78,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
       <nav className={clsx("flex-1 overflow-y-auto overflow-x-hidden pb-3", collapsed ? "px-3" : "px-3")}>
         {NAV_GROUPS.map((g, gi) => {
-          const items = g.items.filter((i) => !i.managerOnly || manager);
+          const items = g.items.filter((i) => (!i.managerOnly || manager) && (!i.ownerOnly || user?.role === "dono"));
           if (!items.length) return null;
           return (
             <div key={gi} className={clsx(gi > 0 && "mt-5")}>

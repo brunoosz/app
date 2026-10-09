@@ -204,6 +204,7 @@ await go("objetivos", "objetivos-caixinha", 1200);
   if (!boxOk) pageErrors.push("Caixinha não guardou o valor do mês");
 }
 await go("plano", "plano", 2000);
+await go("logs", "logs", 1200);
 await go("configuracoes", "configuracoes", 1500);
 // Memória do Assistente: adicionar um item à mão.
 await win.getByPlaceholder("Ex.: gosto de jogar videogame e comer fora").fill("Gosta de jogar videogame");
@@ -218,7 +219,7 @@ console.log(`[notificacoes-nao-lidas] ${notifications || "0"}`);
 
 // Celular e tablet: nenhuma tela pode ter texto saindo do card nem rolagem para o lado.
 const layoutIssues = [];
-const ROUTES = ["", "carteira", "mercado", "mercado/PETR4.SA", "aulas", "assistente", "simulador", "vale-a-pena", "plano", "objetivos", "gastos", "bancos", "alertas", "usuarios", "configuracoes"];
+const ROUTES = ["", "carteira", "mercado", "mercado/PETR4.SA", "aulas", "assistente", "simulador", "vale-a-pena", "plano", "logs", "objetivos", "gastos", "bancos", "alertas", "usuarios", "configuracoes"];
 for (const [label, width, height] of [["celular", 380, 800], ["tablet", 768, 1024]]) {
   await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0].setContentSize(s.w, s.h), { w: width, h: height });
   await wait(600);

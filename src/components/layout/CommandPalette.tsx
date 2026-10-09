@@ -54,7 +54,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const items = useMemo<Item[]>(() => {
     const term = norm(q.trim());
-    const pages = ALL_NAV.filter((n) => !n.managerOnly || isManager(user))
+    const pages = ALL_NAV.filter((n) => (!n.managerOnly || isManager(user)) && (!n.ownerOnly || user?.role === "dono"))
       .filter((n) => !term || norm(n.label).includes(term))
       .map((n) => ({ id: `p-${n.to}`, label: n.label, icon: n.icon, to: n.to, group: "Páginas" }));
     const lessons = term

@@ -1,4 +1,4 @@
-import type { AlertRuntimeState, AppNotification, PublicUser, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
+import type { AiLogEntry, AlertRuntimeState, AppNotification, PublicUser, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { defaultUserData } from "@shared/defaults";
 import type { FileStore } from "./platform";
 import type { CloudState } from "./cloud";
@@ -58,6 +58,7 @@ interface DBShape {
     session?: { userId: string; token: string; expiresAt: string };
     lastTheme?: "dark" | "light";
     cloud?: CloudState;
+    aiLog?: AiLogEntry[];
   };
 }
 

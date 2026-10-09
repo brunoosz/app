@@ -8,6 +8,7 @@ import {
   Landmark,
   Receipt,
   Rocket,
+  ScrollText,
   Settings,
   Sparkles,
   Target,
@@ -21,6 +22,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   managerOnly?: boolean;
+  ownerOnly?: boolean;
 }
 
 export const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
@@ -47,7 +49,10 @@ export const NAV_GROUPS: { title?: string; items: NavItem[] }[] = [
   },
   {
     title: "Administração",
-    items: [{ to: "/usuarios", label: "Usuários", icon: Users, managerOnly: true }],
+    items: [
+      { to: "/usuarios", label: "Usuários", icon: Users, managerOnly: true },
+      { to: "/logs", label: "Logs", icon: ScrollText, ownerOnly: true },
+    ],
   },
 ];
 

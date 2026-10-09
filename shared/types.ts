@@ -649,3 +649,18 @@ export interface DealCheck {
   notes: string[];
   budget: { monthBalance: number; invoicesOpen: number; emergencyReserve: number; monthlyIncome: number; accountsBalance?: number; available?: number };
 }
+
+/** Evento da IA para a aba de Logs do Dono. */
+export interface AiLogEntry {
+  at: string;
+  kind: "ok" | "erro" | "troca" | "cancelado";
+  model: string;
+  /** Código interno (AI_DOWN, AI_SLOW, AI_AUTH…). */
+  code?: string;
+  /** Código HTTP da NVIDIA (404, 429, 500…). */
+  status?: number;
+  message?: string;
+  /** Trecho da resposta do servidor. */
+  detail?: string;
+  ms?: number;
+}

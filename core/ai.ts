@@ -4,6 +4,7 @@ import type { Platform } from "./platform";
 import { AppError } from "./auth";
 import { fetchStream, fetchWithTimeout, isBufferedStream } from "./http";
 import { searchProvider } from "./search";
+import type { AiLogEntry } from "@shared/types";
 import { describeModels, FALLBACK_MODEL, FALLBACK_MODELS, modelLabel, pickBest } from "./models";
 
 export const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
@@ -11,13 +12,10 @@ const CATALOG_TTL = 24 * 3600_000;
 /** Quanto tempo um modelo que falhou fica fora da escolha automática. */
 const COOLDOWN_MS = 30 * 60_000;
 /** Tempo máximo esperando o primeiro sinal de vida do modelo, e entre um trecho e outro. */
-const FIRST_BYTE_MS = 25_000;
+const FIRST_BYTE_MS = 45_000;
 /** Sem streaming (rede nativa do celular) a resposta chega inteira, então espera mais. */
-const FIRST_BYTE_BUFFERED_MS = 75_000;
-const IDLE_MS = 45_000;
-/** Se o primeiro modelo não começar a responder nesse tempo, um segundo entra na disputa. */
-const RACE_AFTER_MS = 6_000;
-const RACE_AFTER_BUFFERED_MS = 15_000;
+const FIRST_BYTE_BUFFERED_MS = 90_000;
+const IDLE_MS = 60_000;
 /** Quantos modelos tentar antes de desistir. */
 const MAX_MODELS = 4;
 
@@ -107,6 +105,10 @@ export class ThinkFilter {
 }
 
 function friendlyError(status: number, body: string): AppError {
+  return Object.assign(friendlyBase(status, body), { status, detail: body.slice(0, 400) });
+}
+
+function friendlyBase(status: number, body: string): AppError {
   if (status === 401 || status === 403) return new AppError("AI_AUTH", "Chave da API inválida ou sem permissão. Confira em Configurações → Inteligência Artificial.");
   if (status === 404 || status === 410) return new AppError("AI_MODEL", "Nenhum modelo de IA disponível respondeu. Atualize a lista em Configurações → Inteligência Artificial.");
   if (status === 429) return new AppError("AI_RATE", "Limite de uso da API atingido. Aguarde alguns instantes e tente de novo.");
@@ -138,7 +140,14 @@ export class AiService {
     const ids = stored.catalog?.ids;
     let model: string;
     if (choice !== "auto" && !retired.includes(choice) && (!ids || ids.includes(choice))) model = choice;
-    else model = (ids && (pickBest(ids, [...retired, ...this.cooling()]) || pickBest(ids, retired))) || FALLBACK_MODEL;
+    else {
+      // Automático: fica no modelo que já está funcionando; só troca se ele falhar
+      // (aposentado ou em pausa por erro) ou sumir da lista da NVIDIA.
+      const last = stored.lastUsed;
+      const cooling = this.cooling();
+      if (last && !retired.includes(last) && !cooling.includes(last) && (!ids || ids.includes(last))) model = last;
+      else model = (ids && (pickBest(ids, [...retired, ...cooling]) || pickBest(ids, retired))) || FALLBACK_MODEL;
+    }
 
     let key: string | null = null;
     let source: AiConfigInfo["source"] = null;
@@ -236,7 +245,7 @@ export class AiService {
         // Modelos que voltaram a aparecer saem da lista de aposentados.
         this.patch({ catalog: { ids, updatedAt: new Date().toISOString() }, retired: (this.stored.retired ?? []).filter((m) => !ids.includes(m)) });
         const after = this.resolve().model;
-        if (after !== before) this.onModelChange?.(before, after, r.choice === "auto" ? "há um modelo melhor disponível" : "o modelo escolhido saiu do catálogo");
+        if (after !== before) this.onModelChange?.(before, after, "o modelo em uso saiu da lista da NVIDIA");
       }
     }
     const ids = this.stored.catalog?.ids ?? [];
@@ -271,152 +280,75 @@ export class AiService {
     this.patch({ cooldown });
   }
 
-  /** Nota do modelo descontando a lentidão medida (cada segundo até a primeira palavra pesa). */
-  private speedScore(id: string, base: number): number {
-    const ms = this.stored.latency?.[id];
-    return ms === undefined ? base : base - Math.min(35, (ms / 1000) * 2.5);
-  }
-
-  private recordLatency(model: string, ms: number): void {
-    const prev = this.stored.latency?.[model];
-    const value = prev === undefined ? ms : Math.round(prev * 0.6 + ms * 0.4);
-    this.patch({ latency: { ...(this.stored.latency ?? {}), [model]: value } });
-  }
-
-  /** Ordem de tentativa: o modelo escolhido (ou o melhor e mais rápido) e depois os próximos do ranking. */
-  private candidates(first: string, auto: boolean): string[] {
+  /** Ordem de tentativa: o modelo atual primeiro; os outros só entram se ele falhar. */
+  private candidates(first: string): string[] {
     const skip = new Set([...(this.stored.retired ?? []), ...this.cooling()]);
     const ids = this.stored.catalog?.ids;
-    const ranked = ids?.length
-      ? describeModels(ids)
-          .map((m) => ({ id: m.id, s: this.speedScore(m.id, m.score) }))
-          .sort((a, b) => b.s - a.s)
-          .map((m) => m.id)
-      : FALLBACK_MODELS;
-    const rest = ranked.filter((id) => !skip.has(id));
-    // No automático vale o ranking com velocidade; com um modelo fixo, ele vem primeiro.
-    return [...new Set(auto ? [...rest, first] : [first, ...rest])].slice(0, MAX_MODELS);
+    const ranked = ids?.length ? describeModels(ids).map((m) => m.id) : FALLBACK_MODELS;
+    return [...new Set([first, ...ranked.filter((id) => !skip.has(id))])].slice(0, MAX_MODELS);
+  }
+
+  /** Registro para a aba de Logs do Dono (últimos 300 eventos, neste aparelho). */
+  private log(entry: Omit<AiLogEntry, "at">): void {
+    const list = this.store.app.aiLog ?? [];
+    list.unshift({ at: new Date().toISOString(), ...entry });
+    this.store.app.aiLog = list.slice(0, 300);
+    this.store.save();
   }
 
   /**
-   * Envia a conversa e entrega a resposta em pedaços. Começa pelo melhor
-   * modelo; se ele não começar a responder em poucos segundos, um segundo
-   * modelo entra na disputa e fica valendo o primeiro que responder. Modelos
-   * fora do ar, lentos demais ou que respondem vazio são trocados sem o
-   * usuário perceber.
+   * Envia a conversa e entrega a resposta em pedaços, sempre pelo mesmo modelo.
+   * Só troca de modelo quando ele falha (erro do servidor, sem resposta no
+   * prazo, resposta vazia ou modelo desativado). Tudo vai para o log do Dono.
    */
   async stream(messages: ChatMessageIn[], onDelta: (text: string) => void, signal?: AbortSignal, maxTokens = 2048): Promise<void> {
     const r = this.resolve();
-    if (!r.key) throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. O Dono do app precisa colocar a chave da NVIDIA em Configurações → Inteligência Artificial.");
+    if (!r.key) {
+      this.log({ kind: "erro", model: "-", code: "AI_NO_KEY", message: "Sem chave da NVIDIA configurada." });
+      throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. O Dono do app precisa colocar a chave da NVIDIA em Configurações → Inteligência Artificial.");
+    }
     if (!this.stored.catalog) await this.catalog().catch(() => undefined);
-    const list = this.candidates(this.resolve().model, r.choice === "auto");
     const buffered = isBufferedStream();
-    if (signal?.aborted) return;
-
-    return new Promise<void>((resolve, reject) => {
-      let next = 0;
-      let running = 0;
-      let winner: number | null = null;
-      let done = false;
-      let lastError: AppError | undefined;
-      const ctrls: AbortController[] = [];
-      const startedAt: number[] = [];
-      let raceTimer: ReturnType<typeof setTimeout> | undefined;
-
-      const finish = (err?: unknown) => {
-        if (done) return;
-        done = true;
-        clearTimeout(raceTimer);
-        signal?.removeEventListener("abort", onOuterAbort);
-        ctrls.forEach((c, i) => i !== winner && c.abort());
-        if (err) reject(err);
-        else resolve();
-      };
-      const onOuterAbort = () => {
-        ctrls.forEach((c) => c.abort());
-        finish();
-      };
-      signal?.addEventListener("abort", onOuterAbort);
-
-      const proceed = () => {
-        if (done || winner !== null) return;
-        if (next < list.length) launch();
-        else if (running === 0) finish(lastError ?? new AppError("AI_DOWN", "O serviço de IA está instável agora. Tente novamente em instantes."));
-      };
-
-      const launch = () => {
-        const i = next++;
-        const model = list[i];
-        const ctrl = new AbortController();
-        ctrls[i] = ctrl;
-        running++;
-        const started = Date.now();
-        startedAt[i] = started;
-        let emitted = false;
-        this.streamOnce(r, model, messages, (d) => {
-          if (winner === null) {
-            winner = i;
-            clearTimeout(raceTimer);
-            this.recordLatency(model, Date.now() - started);
-            // Quem perdeu a disputa ainda não tinha respondido: conta como lento.
-            ctrls.forEach((c, j) => {
-              if (j === i || c.signal.aborted) return;
-              this.recordLatency(list[j], Math.max(this.stored.latency?.[list[j]] ?? 0, Date.now() - startedAt[j]));
-              c.abort();
-            });
-          }
-          if (winner !== i) return;
+    const list = this.candidates(this.resolve().model);
+    let lastError: AppError | undefined;
+    for (let i = 0; i < list.length; i++) {
+      const model = list[i];
+      if (signal?.aborted) return;
+      const started = Date.now();
+      let emitted = false;
+      try {
+        await this.streamOnce(r, model, messages, (d) => {
           emitted = true;
           onDelta(d);
-        }, ctrl.signal, maxTokens, buffered)
-          .then(() => {
-            running--;
-            if (done) return;
-            if (winner === i) {
-              if (this.stored.lastUsed !== model) this.patch({ lastUsed: model });
-              if (i > 0 && r.choice !== "auto" && model !== r.choice) this.onModelChange?.(r.choice, model, "o modelo escolhido não respondeu");
-              finish();
-              return;
-            }
-            if (winner !== null) return;
-            this.coolDown(model);
-            lastError = new AppError("AI_EMPTY", "O modelo de IA não devolveu nenhuma resposta.");
-            proceed();
-          })
-          .catch((err) => {
-            running--;
-            if (done || signal?.aborted) return;
-            if (winner === i) {
-              finish(err);
-              return;
-            }
-            if (winner !== null) return; // perdeu a disputa e foi cancelado
-            const e = err instanceof AppError ? err : new AppError("AI_OFFLINE", "Sem conexão com o serviço de IA. Verifique sua internet.");
-            // Chave inválida ou limite da conta: trocar de modelo não resolve.
-            if (e.code === "AI_AUTH" || e.code === "AI_RATE") return finish(e);
-            if (e.code === "AI_OFFLINE" && !emitted) {
-              lastError = e;
-              if (running === 0) finish(e);
-              return;
-            }
-            if (e.code === "AI_MODEL") {
-              this.patch({ retired: [...new Set([...(this.stored.retired ?? []), model])], ...(r.choice === model ? { model: "auto" } : {}) });
-              if (r.choice === model) this.onModelChange?.(model, this.resolve().model, "o modelo escolhido foi descontinuado pela NVIDIA");
-            } else {
-              this.coolDown(model);
-              if (e.code === "AI_SLOW") this.recordLatency(model, buffered ? FIRST_BYTE_BUFFERED_MS : FIRST_BYTE_MS);
-            }
-            lastError = e;
-            proceed();
-          });
-      };
-
-      launch();
-      // Se o primeiro demorar, um segundo modelo entra na disputa.
-      raceTimer = setTimeout(() => {
-        if (!done && winner === null && next < list.length) launch();
-      }, buffered ? RACE_AFTER_BUFFERED_MS : RACE_AFTER_MS);
-    });
+        }, signal, maxTokens, buffered);
+        if (!emitted) throw new AppError("AI_EMPTY", "O modelo de IA não devolveu nenhuma resposta.");
+        const previous = this.stored.lastUsed;
+        if (previous !== model) this.patch({ lastUsed: model });
+        this.log({ kind: "ok", model, ms: Date.now() - started });
+        if (i > 0) {
+          this.log({ kind: "troca", model, message: `Trocou de ${modelLabel(list[0])} para ${modelLabel(model)} porque o anterior falhou.` });
+          this.onModelChange?.(list[0], model, "o modelo anterior falhou");
+        }
+        return;
+      } catch (err) {
+        if (signal?.aborted || (err as Error).name === "AbortError") {
+          this.log({ kind: "cancelado", model, ms: Date.now() - started });
+          return;
+        }
+        const e = err instanceof AppError ? err : new AppError("AI_OFFLINE", "Sem conexão com o serviço de IA. Verifique sua internet.");
+        const extra = e as AppError & { status?: number; detail?: string };
+        this.log({ kind: "erro", model, code: e.code, status: extra.status, message: e.message, detail: extra.detail, ms: Date.now() - started });
+        // Já começou a responder, chave inválida, limite da conta ou sem internet: trocar de modelo não resolve.
+        if (emitted || ["AI_AUTH", "AI_RATE", "AI_OFFLINE"].includes(e.code)) throw e;
+        if (e.code === "AI_MODEL") {
+          this.patch({ retired: [...new Set([...(this.stored.retired ?? []), model])], ...(r.choice === model ? { model: "auto" } : {}) });
+        } else {
+          this.coolDown(model);
+        }
+        lastError = e;
+      }
+    }
+    throw lastError ?? new AppError("AI_DOWN", "O serviço de IA está instável agora. Tente novamente em instantes.");
   }
 
   private async streamOnce(r: ResolvedConfig, model: string, messages: ChatMessageIn[], onDelta: (text: string) => void, signal: AbortSignal | undefined, maxTokens: number, buffered = false): Promise<void> {
