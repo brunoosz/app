@@ -336,12 +336,12 @@ const iso = (date, hour = 12) => new Date(`${date}T${String(hour).padStart(2, "0
 // Preço médio de compra = cotação atual × fator, para os resultados ficarem
 // realistas qualquer que seja o dia da captura.
 const STOCKS = [
-  { symbol: "PETR4.SA", category: "acoes", quantity: 200, factor: 0.9, institution: "xp", bought: 420 },
+  { symbol: "PETR4.SA", category: "acoes", quantity: 200, factor: 0.92, institution: "xp", bought: 420 },
   { symbol: "ITUB4.SA", category: "acoes", quantity: 150, factor: 0.86, institution: "xp", bought: 380 },
   { symbol: "WEGE3.SA", category: "acoes", quantity: 60, factor: 1.07, institution: "btg", bought: 210 },
-  { symbol: "BOVA11.SA", category: "etfs", quantity: 40, factor: 0.93, institution: "btg", bought: 300 },
+  { symbol: "BOVA11.SA", category: "etfs", quantity: 40, factor: 0.95, institution: "btg", bought: 300 },
   { symbol: "HGLG11.SA", category: "fiis", quantity: 25, factor: 1.02, institution: "xp", bought: 150 },
-  { symbol: "BTC-USD", category: "cripto", quantity: 0.012, factor: 0.8, institution: "mercadopago", bought: 330 },
+  { symbol: "BTC-USD", category: "cripto", quantity: 0.012, factor: 0.93, institution: "mercadopago", bought: 330 },
 ];
 
 function buildDemo(shared, quotes) {
@@ -371,14 +371,16 @@ function buildDemo(shared, quotes) {
   });
   const alloc = (id, type, asset, institution, amount, monthly, rateType, rate) => ({ id, type, asset, institution, amount, monthly, rateType, rate });
   const goals = [
-    goal("demo-g1", "Reserva de emergência", "shield", "#4F8CFF", 24000, 10, [
-      alloc("demo-a1", "tesouro-selic", "Tesouro Selic", "Tesouro Direto", 6500, 400, "selic", 0.07),
-      alloc("demo-a2", "cdb", "CDB liquidez diária", "inter", 8000, 300, "cdi", 110),
+    // Aportes somam R$ 2.000 por mês, o valor do perfil. Três metas ficam no
+    // caminho certo e a aposentadoria mostra quanto falta por mês.
+    goal("demo-g1", "Reserva de emergência", "shield", "#4F8CFF", 24000, 14, [
+      alloc("demo-a1", "tesouro-selic", "Tesouro Selic", "Tesouro Direto", 6500, 350, "selic", 0.07),
+      alloc("demo-a2", "cdb", "CDB liquidez diária", "inter", 8000, 250, "cdi", 110),
     ]),
-    goal("demo-g2", "Viagem para Portugal", "plane", "#A78BFA", 15000, 15, [alloc("demo-a3", "cdb", "CDB", "nubank", 3200, 450, "cdi", 100)]),
-    goal("demo-g3", "Entrada do apartamento", "house", "#34D399", 80000, 50, [
-      alloc("demo-a4", "lci", "LCI", "btg", 5000, 600, "cdi", 94),
-      alloc("demo-a5", "tesouro-ipca", "Tesouro IPCA+ 2032", "Tesouro Direto", 3000, 300, "ipca", 7.1),
+    goal("demo-g2", "Viagem para Portugal", "plane", "#A78BFA", 9000, 13, [alloc("demo-a3", "cdb", "CDB", "nubank", 3200, 450, "cdi", 100)]),
+    goal("demo-g3", "Entrada do apartamento", "house", "#34D399", 65000, 60, [
+      alloc("demo-a4", "lci", "LCI", "btg", 5000, 450, "cdi", 94),
+      alloc("demo-a5", "tesouro-ipca", "Tesouro IPCA+ 2032", "Tesouro Direto", 3000, 250, "ipca", 7.1),
     ]),
     goal("demo-g4", "Aposentadoria", "piggy", "#FBBF24", 600000, 300, [alloc("demo-a6", "etf", "BOVA11", "btg", 5200, 250, "variavel", 10)]),
   ];
@@ -421,7 +423,7 @@ function buildDemo(shared, quotes) {
     q("ITUB4.SA") && { id: "demo-al2", kind: "preco-abaixo", symbol: "ITUB4.SA", value: round(q("ITUB4.SA") * 0.92), active: true, repeat: false, createdAt: iso(daysAgo(18)) },
     q("WEGE3.SA") && { id: "demo-al3", kind: "abaixo-media", symbol: "WEGE3.SA", value: 6, active: true, repeat: true, createdAt: iso(daysAgo(12)) },
     q("BTC-USD") && { id: "demo-al4", kind: "variacao-dia", symbol: "BTC-USD", value: 7, active: true, repeat: true, createdAt: iso(daysAgo(9)) },
-    { id: "demo-al5", kind: "lembrete", title: "Aporte do mês", message: "Separar R$ 1.200 para os investimentos assim que o salário cair.", remindAt: iso(`${ymShift(1)}-05`, 9), active: true, repeat: false, createdAt: iso(daysAgo(5)) },
+    { id: "demo-al5", kind: "lembrete", title: "Aporte do mês", message: "Separar R$ 2.000 para os investimentos assim que o salário cair.", remindAt: iso(`${ymShift(1)}-05`, 9), active: true, repeat: false, createdAt: iso(daysAgo(5)) },
   ].filter(Boolean);
 
   // Aulas: as seis primeiras aprovadas (390 XP). A sétima fica para o GIF e
@@ -443,7 +445,7 @@ function buildDemo(shared, quotes) {
     extraIncome: 600,
     fixedExpenses: 2900,
     variableExpenses: 1500,
-    monthlyInvest: 1200,
+    monthlyInvest: 2000,
     emergencyReserve: 14500,
     invested: Math.round(invested),
     debts: 0,
@@ -453,7 +455,9 @@ function buildDemo(shared, quotes) {
     age: 29,
     updatedAt: new Date().toISOString(),
   };
-  const settings = { ...base.settings, theme: "dark", favorites: ["^BVSP", "USDBRL=X", "PETR4.SA", "ITUB4.SA", "WEGE3.SA", "BTC-USD"] };
+  // Desvio da média de 50 dias em 12% para a lista de avisos não repetir o
+  // mesmo tipo de alerta para quase todos os ativos.
+  const settings = { ...base.settings, theme: "dark", deviationThreshold: 12, favorites: ["^BVSP", "USDBRL=X", "PETR4.SA", "ITUB4.SA", "WEGE3.SA", "BTC-USD"] };
 
   const sim = (symbol, quantity, factor) => q(symbol) && { symbol, name: shared.CATALOG.find((a) => a.symbol === symbol)?.name ?? quotes[symbol].name, quantity, avgPrice: round(q(symbol) * factor), currency: quotes[symbol].currency || "BRL" };
   const positions = [sim("VALE3.SA", 300, 0.97), sim("BBAS3.SA", 500, 1.04), sim("IVVB11.SA", 50, 0.95)].filter(Boolean);
@@ -704,7 +708,7 @@ if (process.env.NVIDIA_API_KEY) {
       async () => {
         await sleep(700);
         await cursor.click(win.locator("main textarea").first());
-        await cursor.type("Tenho R$ 1.200 por mês para investir. Por onde começo?", 45);
+        await cursor.type("Tenho R$ 2.000 por mês para investir. Por onde começo?", 45);
         await win.keyboard.press("Enter");
         const stop = win.getByRole("button", { name: "Parar" });
         await stop.waitFor({ state: "visible", timeout: 15_000 });
