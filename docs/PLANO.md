@@ -47,7 +47,12 @@ Hoje o "Saldo" do topo é renda + extras − gastos lançados, e não desconta a
 - Questionário curto (objetivo, prazo, perfil, quanto consegue guardar, mesmo R$ 1).
 - Plano gerado com valores reais de hoje (CDI, Tesouro, poupança): por onde começar com centavos/R$ 1 (Tesouro Selic, CDB com liquidez diária, caixinhas), quando montar a reserva, quando diversificar.
 - Plano de longo prazo com datas e marcos ("R$ 1.000 em março", "reserva completa em…"), projeção com juros compostos, e PDF.
-- Base de conteúdo: princípios de livros conhecidos (Pai Rico Pai Pobre, O Homem Mais Rico da Babilônia, Os Segredos da Mente Milionária, Me Poupe!, Do Mil ao Milhão) resumidos no app. A IA da NVIDIA não pesquisa na internet; se for preciso busca de verdade, avaliar uma API de busca gratuita.
+- Base de conteúdo (sempre disponível, sem internet): resumos de princípios de livros conhecidos (Pai Rico Pai Pobre, O Homem Mais Rico da Babilônia, Os Segredos da Mente Milionária, Me Poupe!, Do Mil ao Milhão, A Psicologia Financeira) guardados no app e enviados à IA junto com a pergunta.
+- Pesquisa na internet (a IA da NVIDIA não pesquisa sozinha): o app faz a busca e entrega os resultados à IA. Opções gratuitas, em ordem:
+  1. **Tavily** (1.000 buscas/mês grátis, feita para IA, devolve o texto já resumido) ou **Brave Search API** (plano grátis com cota mensal). O Dono cola a chave em Configurações, igual à da NVIDIA, e ela vale para todas as contas pela nuvem.
+  2. **Jina Reader** (`r.jina.ai/<link>`, grátis e sem chave) para ler o conteúdo de uma página encontrada.
+  3. **Wikipedia** (API aberta, sem chave) como fonte extra para conceitos.
+  - O Assistente ganha um interruptor "Pesquisar na internet" e mostra as fontes usadas no fim da resposta e no PDF.
 - Lembretes mensais para cumprir o plano.
 
 ## 8. Gravar voz
@@ -59,12 +64,23 @@ Hoje o "Saldo" do topo é renda + extras − gastos lançados, e não desconta a
 - Amazon, Shopee e AliExpress: testar cada uma; quando bloquear, pedir o preço e manter os links de histórico.
 - Não existe acesso livre "a todos os sites do Google" de graça; a busca por nome pode usar a API do Mercado Livre e da Steam.
 
-## 10. Limpeza do histórico do GitHub (por último)
+## 10. Contas fixas com lembrete
+- Cadastro de contas que se repetem (aluguel, internet, luz, streaming, academia): valor, dia do vencimento, banco.
+- Aviso 3 dias antes e no dia (notificação no PC e no celular), botão "Paguei" que lança o gasto do mês.
+- Entram no "Disponível para gastar" antes mesmo de serem pagas.
+
+## 11. Modo privacidade
+- Botão de olho no topo (e atalho) que troca todos os valores por "R$ •••••". Fica salvo por aparelho.
+
+## 12. Caixinhas automáticas
+- Caixinhas com nome, meta e valor mensal (ex.: "Viagem" R$ 100/mês no dia 5). No dia, o app lança o valor guardado, desconta do disponível e mostra o progresso.
+- Podem ser ligadas às metas e ao plano de investimento.
+
+## 13. Resumo semanal no domingo
+- Todo domingo: quanto gastou na semana, comparação com a semana anterior, quanto sobra no mês, contas que vencem na semana e uma dica do Assistente. Notificação + card na Início, e opção de desligar em Configurações.
+
+## 14. Limpeza do histórico do GitHub (por último)
 - Um commit único com a conta do Bruno como autor, sem menção ao Claude; trocar a `main`; tirar `claude/**` do `media.yml`; apagar as branches antigas.
 
-## Ideias extras
-- Contas fixas recorrentes (aluguel, internet, assinaturas) com lembrete antes do vencimento.
-- Modo privacidade: esconder valores com um toque (útil em público).
-- Caixinhas/objetivos que recebem um valor automático por mês.
-- Resumo semanal no domingo: quanto gastou, quanto sobra, uma dica.
+## Outras ideias
 - Exportar/importar backup em arquivo, além da nuvem.
