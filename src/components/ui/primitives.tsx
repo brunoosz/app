@@ -256,7 +256,17 @@ export function AnimatedNumber({ value, format, className }: { value: number; fo
       if (t < 1) frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
+    // Garante o valor final mesmo se o navegador pausar os quadros (janela em
+    // segundo plano, por exemplo).
+    const done = setTimeout(() => {
+      cancelAnimationFrame(frame);
+      current.current = value;
+      setDisplay(value);
+    }, duration + 150);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(done);
+    };
   }, [value]);
   return <span className={clsx("tabular", className)}>{format(display)}</span>;
 }
