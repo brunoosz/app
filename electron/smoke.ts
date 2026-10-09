@@ -1,6 +1,7 @@
 import { CATALOG } from "@shared/catalog";
 import { getChart, getQuotes, search } from "../core/yahoo";
 import { getCopom, getFocus, getIndicators, sgsProbe } from "../core/bcb";
+import { extractProduct } from "../core/deals";
 import { fetchWithTimeout } from "../core/http";
 import { getTesouro } from "../core/tesouro";
 import { getNews } from "../core/news";
@@ -80,6 +81,27 @@ async function main(): Promise<void> {
   await step("CheapShark: histórico do jogo 1091500", async () => {
     const res = await fetchWithTimeout("https://www.cheapshark.com/api/1.0/games?steamAppID=1091500", { headers: { "User-Agent": "Investa/1.0 (+https://github.com/brunoosz/app)" } }, 15_000);
     return `HTTP ${res.status} ${res.headers.get("server") ?? ""} ${(await res.text()).slice(0, 160)}`;
+  }, (r) => r);
+
+  // Lojas (diagnóstico): o que a API e as páginas respondem fora do Brasil, no servidor do CI.
+  await step("Mercado Livre: API de busca", async () => {
+    const res = await fetchWithTimeout("https://api.mercadolibre.com/sites/MLB/search?q=playstation%205&limit=1", {}, 15_000);
+    return `HTTP ${res.status} ${(await res.text()).slice(0, 200)}`;
+  }, (r) => r);
+  await step("Mercado Livre: API de anúncio", async () => {
+    const res = await fetchWithTimeout("https://api.mercadolibre.com/products/MLB1027172677", {}, 15_000);
+    return `HTTP ${res.status} ${(await res.text()).slice(0, 200)}`;
+  }, (r) => r);
+  await step("Mercado Livre: página de produto", async () => {
+    const res = await fetchWithTimeout("https://www.mercadolivre.com.br/apple-iphone-15-128-gb-preto/p/MLB1027172677", { headers: { Accept: "text/html" } }, 20_000);
+    const html = await res.text();
+    const p = extractProduct(html);
+    return `HTTP ${res.status} final=${res.url.slice(0, 80)} preço=${p.price ?? "—"} título=${(p.title ?? "—").slice(0, 60)}`;
+  }, (r) => r);
+  await step("Amazon: página de produto", async () => {
+    const res = await fetchWithTimeout("https://www.amazon.com.br/dp/B09B8XJDW5", { headers: { Accept: "text/html" } }, 20_000);
+    const p = extractProduct(await res.text());
+    return `HTTP ${res.status} preço=${p.price ?? "—"} título=${(p.title ?? "—").slice(0, 60)}`;
   }, (r) => r);
 
   for (const code of [1, 10813, 21619, 433, 13522, 4389]) {

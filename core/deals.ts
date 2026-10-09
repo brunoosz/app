@@ -118,7 +118,44 @@ export function extractProduct(html: string): PageProduct {
   out.price ??= parseNumber(meta("product:price:amount")) ?? parseNumber(meta("og:price:amount")) ?? parseNumber(meta("price"));
   out.currency ??= meta("product:price:currency") ?? meta("og:price:currency") ?? meta("priceCurrency");
   out.regularPrice = parseNumber(meta("product:original_price:amount"));
+  // Lojas sem dados estruturados: preço dentro do estado da página ou num elemento de preço.
+  out.price ??=
+    parseNumber(/"priceAmount"\s*:\s*([\d.]+)/.exec(html)?.[1]) ??
+    parseNumber(/"price"\s*:\s*\{?\s*"?(?:value"?\s*:\s*)?([\d.]+)\s*,\s*"currency(?:_id|Code)?"\s*:\s*"BRL"/.exec(html)?.[1]) ??
+    parseNumber(/class="a-offscreen"[^>]*>\s*R\$\s*([\d.]+,\d{2})/i.exec(html)?.[1]) ??
+    parseNumber(/(?:class|id)="[^"]*price[^"]*"[^>]*>\s*(?:<[^>]+>\s*)*R\$\s*(?:<[^>]+>\s*)*([\d.]+,\d{2})/i.exec(html)?.[1]);
+  if (out.price && !out.currency) out.currency = "BRL";
   return out;
+}
+
+/** Código do anúncio (MLB123…) ou do produto de catálogo (/p/MLB…) num link do Mercado Livre. */
+export function mercadoLivreIds(url: string): { item?: string; product?: string } {
+  const product = /\/p\/(MLB\d+)/i.exec(url)?.[1]?.toUpperCase();
+  const itemMatch = /(?:item_id[=:]|wid=)(MLB)-?(\d{6,})/i.exec(url) ?? /\/(MLB)-?(\d{6,})/i.exec(url.replace(/\/p\/MLB\d+/i, ""));
+  const item = itemMatch ? `MLB${itemMatch[2]}` : undefined;
+  return { item: item && item !== product ? item : undefined, product };
+}
+
+/** Preço pela API pública do Mercado Livre (mais confiável que ler a página). */
+async function mercadoLivreApi(url: string): Promise<PageProduct | null> {
+  const { item, product } = mercadoLivreIds(url);
+  if (item) {
+    const r = await getJson<{ title?: string; price?: number; original_price?: number | null; currency_id?: string; thumbnail?: string; pictures?: { secure_url?: string }[] }>(
+      `https://api.mercadolibre.com/items/${item}`,
+      {},
+      12_000
+    ).catch(() => null);
+    if (r?.price) return { title: r.title, price: r.price, regularPrice: r.original_price ?? undefined, currency: r.currency_id ?? "BRL", image: r.pictures?.[0]?.secure_url ?? r.thumbnail };
+  }
+  if (product) {
+    const r = await getJson<{ name?: string; buy_box_winner?: { price?: number; original_price?: number | null; currency_id?: string }; pictures?: { url?: string }[] }>(
+      `https://api.mercadolibre.com/products/${product}`,
+      {},
+      12_000
+    ).catch(() => null);
+    if (r?.buy_box_winner?.price) return { title: r.name, price: r.buy_box_winner.price, regularPrice: r.buy_box_winner.original_price ?? undefined, currency: r.buy_box_winner.currency_id ?? "BRL", image: r.pictures?.[0]?.url };
+  }
+  return null;
 }
 
 function storeName(url: string): string {
@@ -223,19 +260,30 @@ export async function checkDeal(input: DealInput, budget: DealCheck["budget"]): 
   } else {
     if (url) {
       try {
-        const res = await fetchWithTimeout(url, { headers: { Accept: "text/html,application/xhtml+xml" } }, 20_000);
-        const html = await res.text();
-        const p = extractProduct(html);
+        let finalUrl = url;
+        let p: PageProduct | null = /mercadoli(vre|bre)\.com/i.test(url) ? await mercadoLivreApi(url) : null;
+        if (!p?.price) {
+          const res = await fetchWithTimeout(
+            url,
+            { headers: { Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "pt-BR,pt;q=0.9", "Cache-Control": "no-cache" } },
+            20_000
+          );
+          // Links curtos (meli.la, a.co, amzn.to) chegam na página do produto depois do redirecionamento.
+          finalUrl = res.url || url;
+          const page = extractProduct(await res.text());
+          if (!page.price && /mercadoli(vre|bre)\.com/i.test(finalUrl) && finalUrl !== url) p = await mercadoLivreApi(finalUrl);
+          p = p?.price ? { ...page, ...p } : { ...p, ...page };
+        }
         result.title = p.title;
         result.image = p.image;
-        result.url = url;
-        result.source = storeName(url);
+        result.url = finalUrl;
+        result.source = storeName(finalUrl);
         if (p.price) {
           result.currentPrice = p.price;
           result.currency = p.currency ?? "BRL";
           result.regularPrice = p.regularPrice;
           if (p.regularPrice && p.regularPrice > p.price) result.discountPercent = Math.round((1 - p.price / p.regularPrice) * 100);
-          offers.push({ store: result.source, price: p.price, currency: result.currency, priceBrl: result.currency === "BRL" ? p.price : undefined, regularPrice: p.regularPrice, url });
+          offers.push({ store: result.source, price: p.price, currency: result.currency, priceBrl: result.currency === "BRL" ? p.price : undefined, regularPrice: p.regularPrice, url: finalUrl });
         } else {
           notes.push(`Não consegui ler o preço na página da ${result.source}. Informe o preço no campo ao lado.`);
         }

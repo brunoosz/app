@@ -59,6 +59,9 @@ export function writeDiskCache(name: string, data: unknown): void {
 }
 const BROWSER_HOSTS = new Set(["olinda.bcb.gov.br", "www.tesourodireto.com.br", "api.bcb.gov.br", "store.steampowered.com"]);
 
+/** Lojas: a rede do Chromium passa por mais bloqueios anti-robô do que a do Node. */
+const STORE_HOSTS = /(^|\.)(mercadolivre\.com\.br|mercadolibre\.com|meli\.la|amazon\.com\.br|amzn\.to|a\.co|shopee\.com\.br|aliexpress\.com|kabum\.com\.br|magazineluiza\.com\.br|epicgames\.com)$/i;
+
 /** No app desktop, usa a pilha de rede do Chromium para servidores que bloqueiam clientes que não são navegadores. */
 export function setBrowserFetch(fn: FetchImpl): void {
   browserFetch = fn;
@@ -67,7 +70,8 @@ export function setBrowserFetch(fn: FetchImpl): void {
 export async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12_000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  const impl: FetchImpl = browserFetch && BROWSER_HOSTS.has(new URL(url).host) ? browserFetch : (u, i) => fetch(u, i);
+  const host = new URL(url).host;
+  const impl: FetchImpl = browserFetch && (BROWSER_HOSTS.has(host) || STORE_HOSTS.test(host)) ? browserFetch : (u, i) => fetch(u, i);
   try {
     return await impl(url, {
       ...init,
