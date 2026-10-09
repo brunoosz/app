@@ -620,12 +620,12 @@ await attempt("mercado.gif", async () => {
       await cursor.moveTo(box.x + box.width * 0.85, box.y + box.height * 0.45, 1300);
     }
     for (const r of ["1M", "6M", "1A"]) {
-      await cursor.click(win.getByRole("button", { name: r, exact: true }));
-      await sleep(800);
+      await cursor.click(win.getByRole("button", { name: r, exact: true }), { pause: 90 });
+      await sleep(700);
     }
     await cursor.click(win.locator("main button:has(svg.lucide-chart-candlestick)"));
     await sleep(1000);
-  });
+  }, { speed: 1.15 });
 });
 
 // Aula: o quiz da sétima aula da trilha até a aprovação. A aula ocupa só o
