@@ -50,7 +50,7 @@ const MOTION = { width: 1280, height: 800, scale: 1 };
 async function launch(size) {
   const app = await electron.launch({
     executablePath: exe,
-    args: [root, "--no-sandbox", "--disable-gpu", `--force-device-scale-factor=${size.scale}`],
+    args: [root, "--no-sandbox", "--disable-gpu", "--lang=pt-BR", `--force-device-scale-factor=${size.scale}`],
     env: { ...process.env, INVESTA_USER_DATA: dataDir, TZ },
   });
   const win = await app.firstWindow();
@@ -62,6 +62,11 @@ async function launch(size) {
   }, size);
   await win.waitForLoadState("domcontentloaded");
   return { app, win };
+}
+
+async function resize(app, width, height) {
+  await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0].setContentSize(s.width, s.height), { width, height });
+  await sleep(400);
 }
 
 async function invoke(win, channel, args) {
@@ -143,14 +148,19 @@ function pointer(win) {
   let pos = { x: MOTION.width * 0.62, y: MOTION.height * 0.55 };
   const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
+  // O tempo do movimento é medido no relógio, porque cada mouse.move leva
+  // alguns milissegundos de ida e volta até o Electron.
   async function moveTo(x, y, ms) {
     const dist = Math.hypot(x - pos.x, y - pos.y);
-    const dur = ms ?? Math.min(850, 260 + dist * 0.55);
-    const steps = Math.max(10, Math.round(dur / 16));
-    for (let i = 1; i <= steps; i++) {
-      const k = ease(i / steps);
-      await win.mouse.move(pos.x + (x - pos.x) * k, pos.y + (y - pos.y) * k);
-      await sleep(dur / steps);
+    const dur = ms ?? Math.min(700, 220 + dist * 0.45);
+    const from = pos;
+    const t0 = Date.now();
+    for (;;) {
+      const t = Math.min(1, (Date.now() - t0) / dur);
+      const k = ease(t);
+      await win.mouse.move(from.x + (x - from.x) * k, from.y + (y - from.y) * k);
+      if (t >= 1) break;
+      await sleep(12);
     }
     pos = { x, y };
   }
@@ -188,7 +198,8 @@ function pointer(win) {
 // ---------------------------------------------------------------------------
 // GIF: grava os quadros com o screencast do Chromium e converte com ffmpeg
 
-async function record(win, name, scene, { hold = 1600, width = MOTION.width, speed = 1 } = {}) {
+async function record(win, name, scene, { hold = 1400, width, speed = 1 } = {}) {
+  width ??= await win.evaluate(() => innerWidth);
   const cdp = await win.context().newCDPSession(win);
   const frames = [];
   cdp.on("Page.screencastFrame", (f) => {
@@ -584,9 +595,11 @@ await attempt("mercado.gif", async () => {
   });
 });
 
-// Aula: a sétima da trilha, do último card até a aprovação.
+// Aula: a sétima da trilha, do último card até a aprovação. A aula ocupa só o
+// centro da tela, então a janela fica menor neste GIF.
 await attempt("aula.gif", async () => {
   const next = shared.ALL_LESSONS[6].lesson;
+  await resize(app, 1040, 700);
   await go(win, `aula/${next.id}`);
   await win.getByRole("button", { name: "Sair da aula" }).waitFor({ timeout: 15_000 });
   await sleep(800);
@@ -595,23 +608,29 @@ await attempt("aula.gif", async () => {
     await win.getByRole("button", { name: "Continuar", exact: true }).click();
     await sleep(700);
   }
-  await record(win, "aula", async () => {
-    await sleep(900);
-    await cursor.click(win.getByRole("button", { name: "Ir para o quiz" }));
-    for (let i = 0; i < next.quiz.length; i++) {
-      await win.getByText(`Questão ${i + 1} de ${next.quiz.length}`).waitFor();
-      await sleep(900);
-      await cursor.click(win.locator("h2 + div > button").nth(next.quiz[i].answer));
-      await sleep(300);
-      await cursor.click(win.getByRole("button", { name: "Verificar" }));
-      await sleep(1000);
-      await cursor.click(win.getByRole("button", { name: "Continuar", exact: true }));
-    }
-    await win.getByText("ganhos nesta aula").waitFor();
-    await sleep(2600);
-  });
+  await record(
+    win,
+    "aula",
+    async () => {
+      await sleep(600);
+      await cursor.click(win.getByRole("button", { name: "Ir para o quiz" }));
+      for (let i = 0; i < next.quiz.length; i++) {
+        await win.getByText(`Questão ${i + 1} de ${next.quiz.length}`).waitFor();
+        await sleep(650);
+        await cursor.click(win.locator("h2 + div > button").nth(next.quiz[i].answer), { pause: 100 });
+        await sleep(200);
+        await cursor.click(win.getByRole("button", { name: "Verificar" }), { pause: 100 });
+        await sleep(750);
+        await cursor.click(win.getByRole("button", { name: "Continuar", exact: true }), { pause: 100 });
+      }
+      await win.getByText("ganhos nesta aula").waitFor();
+      await sleep(2300);
+    },
+    { speed: 1.15 }
+  );
   await win.keyboard.press("Escape");
   await sleep(600);
+  await resize(app, MOTION.width, MOTION.height);
 });
 
 // Gasto parcelado
