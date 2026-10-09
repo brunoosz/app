@@ -1,5 +1,3 @@
-"use client";
-
 interface MiniChartProps {
   data: { date: string; close: number }[];
   positive: boolean;

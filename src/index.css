@@ -14,22 +14,6 @@
   --yellow: #f59e0b;
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --background: #f8fafc;
-    --foreground: #0b1929;
-    --navy-card: #ffffff;
-    --navy-border: #e2e8f0;
-  }
-}
-
-:root[data-theme="dark"] {
-  --background: #0b1929;
-  --foreground: #f0f4ff;
-  --navy-card: #112240;
-  --navy-border: #1e3a5f;
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
@@ -42,6 +26,23 @@ body {
   padding: 0;
 }
 
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--navy-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--emerald);
+}
+
 @layer utilities {
   .card {
     @apply rounded-2xl border p-6;
@@ -50,13 +51,32 @@ body {
   }
 
   .btn-primary {
-    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200;
+    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200 cursor-pointer;
     background: var(--emerald);
     color: white;
+    border: none;
   }
 
   .btn-primary:hover {
     background: var(--emerald-dark);
     transform: translateY(-1px);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.3;
+    transform: none;
+    cursor: not-allowed;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border text-sm;
+    background: var(--navy-card);
+    border-color: var(--navy-border);
+    color: var(--foreground);
+    outline: none;
+  }
+
+  .input-field:focus {
+    border-color: var(--emerald);
   }
 }

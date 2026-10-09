@@ -1,6 +1,4 @@
-"use client";
-
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { StockData, formatCurrency, formatPercent, formatVolume } from "@/data/market";
 
 interface StockCardProps {
@@ -36,7 +34,7 @@ export default function StockCard({ stock, compact }: StockCardProps) {
   }
 
   return (
-    <Link href={`/mercado?ticker=${stock.ticker}`}>
+    <Link to={`/mercado?ticker=${stock.ticker}`} className="no-underline">
       <div className="card hover:border-emerald-500/50 transition-all duration-200 cursor-pointer">
         <div className="flex items-start justify-between mb-4">
           <div>
