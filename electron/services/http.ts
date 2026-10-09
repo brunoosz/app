@@ -7,11 +7,22 @@ export class HttpError extends Error {
   }
 }
 
+type FetchImpl = (url: string, init: RequestInit) => Promise<Response>;
+
+let browserFetch: FetchImpl | null = null;
+const BROWSER_HOSTS = new Set(["olinda.bcb.gov.br", "www.tesourodireto.com.br", "api.bcb.gov.br"]);
+
+/** No app desktop, usa a pilha de rede do Chromium para servidores que bloqueiam clientes que não são navegadores. */
+export function setBrowserFetch(fn: FetchImpl): void {
+  browserFetch = fn;
+}
+
 export async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 12_000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const impl: FetchImpl = browserFetch && BROWSER_HOSTS.has(new URL(url).host) ? browserFetch : (u, i) => fetch(u, i);
   try {
-    return await fetch(url, {
+    return await impl(url, {
       ...init,
       signal: init.signal ?? ctrl.signal,
       headers: { "User-Agent": UA, Accept: "*/*", "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8", ...(init.headers as Record<string, string>) },

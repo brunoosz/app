@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, safeStorage, shell, Tray, type IpcMainInvokeEvent } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +12,8 @@ import { AiService, type Secrets } from "./services/ai";
 import { AlertEngine } from "./services/engine";
 import { getChart, getQuotes, search } from "./services/yahoo";
 import { getCopom, getIndicators, getIpcaHistory, getSelicHistory } from "./services/bcb";
-import { getTesouro } from "./services/tesouro";
+import { getTesouro, setTesouroCacheFile } from "./services/tesouro";
+import { setBrowserFetch } from "./services/http";
 import { getNews } from "./services/news";
 import { getBanks } from "./services/banks";
 import { portfolioHistory } from "./services/portfolio";
@@ -458,6 +459,8 @@ app.on("second-instance", () => showWindow());
 
 app.whenReady().then(() => {
   store = new Store(app.getPath("userData"));
+  setBrowserFetch((url, init) => net.fetch(url, init));
+  setTesouroCacheFile(path.join(app.getPath("userData"), "cache-tesouro.json"));
   auth = new AuthService(store);
   const configDirs = [app.getPath("userData"), process.env.PORTABLE_EXECUTABLE_DIR, path.dirname(process.execPath), isDev ? process.cwd() : undefined].filter(
     (d): d is string => !!d

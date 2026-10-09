@@ -5,13 +5,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const shots = process.env.SHOTS || path.join(root, "e2e-shots");
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "investa-e2e-"));
 fs.mkdirSync(shots, { recursive: true });
 
-const exe = process.platform === "win32" ? path.join(root, "node_modules/electron/dist/electron.exe") : path.join(root, "node_modules/electron/dist/electron");
+// O pacote electron baixa o binário na primeira vez em que é requisitado.
+const exe = createRequire(import.meta.url)("electron");
 const app = await electron.launch({
   executablePath: exe,
   args: [root, "--no-sandbox", "--disable-gpu"],
@@ -37,6 +39,7 @@ const report = async (name) => {
       skeletons: document.querySelectorAll(".skeleton").length,
       charts: document.querySelectorAll("canvas").length,
       heading: document.querySelector("h1")?.textContent?.trim(),
+      values: [...document.querySelectorAll("main .tabular")].map((e) => e.textContent.trim()).filter(Boolean).slice(0, 8),
     };
   });
   console.log(`[${name}] ${JSON.stringify(info)}`);

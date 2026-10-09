@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { TesouroData, TesouroTitle } from "@shared/types";
 import { cached, fetchWithTimeout, getJson } from "./http";
 
@@ -109,12 +110,46 @@ function sortTitles(titles: TesouroTitle[]): TesouroTitle[] {
   return titles.sort((a, b) => order[a.indexer] - order[b.indexer] || a.maturity.localeCompare(b.maturity));
 }
 
+let diskCacheFile: string | null = null;
+
+/** Guarda a última consulta em disco: a base oficial completa tem vários MB e muda uma vez por dia. */
+export function setTesouroCacheFile(file: string): void {
+  diskCacheFile = file;
+}
+
+function readDisk(maxAgeMs: number): TesouroData | null {
+  if (!diskCacheFile) return null;
+  try {
+    const saved = JSON.parse(fs.readFileSync(diskCacheFile, "utf8")) as { savedAt: number; data: TesouroData };
+    return Date.now() - saved.savedAt <= maxAgeMs ? saved.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getTesouro(): Promise<TesouroData> {
   return cached("tesouro", 60 * 60_000, async () => {
+    const fresh = readDisk(4 * 3600_000);
+    if (fresh) return fresh;
     try {
-      return await fromOfficialJson();
-    } catch {
-      return await fromTransparencyCsv();
+      let data: TesouroData;
+      try {
+        data = await fromOfficialJson();
+      } catch {
+        data = await fromTransparencyCsv();
+      }
+      if (diskCacheFile) {
+        try {
+          fs.writeFileSync(diskCacheFile, JSON.stringify({ savedAt: Date.now(), data }));
+        } catch {
+          // sem permissão de escrita: segue só com o cache em memória
+        }
+      }
+      return data;
+    } catch (err) {
+      const stale = readDisk(Number.POSITIVE_INFINITY);
+      if (stale) return stale;
+      throw err;
     }
   });
 }

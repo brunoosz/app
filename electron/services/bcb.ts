@@ -16,6 +16,10 @@ async function sgsLast(code: number, n = 1): Promise<SeriesValue[]> {
     .filter((r) => Number.isFinite(r.value));
 }
 
+export async function sgsProbe(code: number): Promise<SeriesValue[]> {
+  return sgsLast(code, 2);
+}
+
 async function sgsRange(code: number, fromIso: string, toIso: string): Promise<SeriesValue[]> {
   const url = `${SGS}.${code}/dados?formato=json&dataInicial=${isoToBrDate(fromIso)}&dataFinal=${isoToBrDate(toIso)}`;
   const rows = await getJson<SgsRow[]>(url, {}, 20_000);
@@ -35,7 +39,7 @@ export async function getIndicators(): Promise<Indicators> {
       sgsLast(4389, 1),
       sgsLast(433, 1),
       sgsLast(13522, 1),
-      sgsLast(1, 2),
+      sgsLast(1, 2).catch(() => sgsLast(10813, 2)),
       sgsLast(21619, 1),
       sgsLast(195, 1),
       sgsLast(226, 1),
@@ -49,8 +53,9 @@ export async function getIndicators(): Promise<Indicators> {
     const dollarLast = dollar?.[dollar.length - 1];
     const dollarPrev = dollar && dollar.length > 1 ? dollar[dollar.length - 2] : undefined;
     const focus = await getFocus().catch(() => undefined);
+    const today = todayIsoSaoPaulo();
     const out: Indicators = {
-      selic: selic?.[0],
+      selic: selic?.[0] ? { ...selic[0], date: selic[0].date > today ? today : selic[0].date } : undefined,
       cdi,
       ipcaMonth: ipcaMonth?.[0],
       ipca12m: ipca12?.[0],

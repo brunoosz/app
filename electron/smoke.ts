@@ -1,6 +1,7 @@
 import { CATALOG } from "@shared/catalog";
 import { getChart, getQuotes, search } from "./services/yahoo";
-import { getCopom, getFocus, getIndicators } from "./services/bcb";
+import { getCopom, getFocus, getIndicators, sgsProbe } from "./services/bcb";
+import { fetchWithTimeout } from "./services/http";
 import { getTesouro } from "./services/tesouro";
 import { getNews } from "./services/news";
 import { getBanks, getCreditRates } from "./services/banks";
@@ -71,6 +72,25 @@ async function main(): Promise<void> {
     (r) => `período ${r.period}; ${r.modalities.map((m) => `${m.label}: ${m.rates.length} instituições (menor ${m.rates[0]?.institution} ${m.rates[0]?.rateMonth}% a.m.)`).join(" | ")}`
   );
   await step("Ranking de bancos", () => getBanks(), (r) => r.scores.slice(0, 5).map((s) => `${s.bankId}:${s.score}`).join(", "));
+
+  for (const code of [1, 10813, 21619, 433, 13522, 4389]) {
+    await step(`BCB: série SGS ${code}`, () => sgsProbe(code), (r) => JSON.stringify(r));
+  }
+  for (const url of [
+    "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoSelic?$top=1&$format=json",
+    "https://www.tesourodireto.com.br/json/br/com/b3/tesourodireto/service/api/treasurybondsinfo.json",
+  ]) {
+    await step(
+      `Diagnóstico ${new URL(url).host}`,
+      async () => {
+        const res = await fetchWithTimeout(url, {}, 15_000);
+        const body = await res.text();
+        const title = /<title>([^<]*)/i.exec(body)?.[1];
+        return `HTTP ${res.status} ${res.headers.get("server") ?? ""} ${title ? `título: ${title}` : body.slice(0, 120)}`;
+      },
+      (r) => r
+    );
+  }
 
   console.log(`\n${failures ? `${failures} verificação(ões) crítica(s) falharam.` : "Todas as verificações críticas passaram."}`);
   process.exit(failures ? 1 : 0);
