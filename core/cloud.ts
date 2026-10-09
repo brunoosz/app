@@ -51,9 +51,15 @@ export interface CloudState {
   sessions?: Record<string, Tokens>;
   /** data_updated_at da nuvem na última sincronização de cada conta. */
   syncedAt?: Record<string, string>;
-  /** Contas com mudanças locais ainda não enviadas. */
+  /** Contas com mudanças locais ainda não enviadas (legado, antes do controle por chave). */
   dirty?: Record<string, number>;
+  /** Por conta: chave dos dados → quando mudou aqui e ainda não subiu. */
+  dirtyKeys?: Record<string, Record<string, number>>;
+  /** Contas que já foram ligadas à nuvem neste aparelho. */
+  linked?: Record<string, boolean>;
   aiUpdatedAt?: string;
+  /** Configuração da IA que o Dono mudou e ainda não chegou à nuvem (sem internet). */
+  aiPending?: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null };
 }
 
 class NetworkError extends Error {}
@@ -61,6 +67,8 @@ class NetworkError extends Error {}
 export class CloudService {
   readonly enabled = !!(CLOUD_URL && CLOUD_KEY);
   private pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private pushing = new Set<string>();
+  private pushAgain = new Set<string>();
 
   constructor(private store: Store) {}
 
@@ -122,7 +130,7 @@ export class CloudService {
       });
       return this.saveTokens(userId, r).access;
     } catch (err) {
-      if (err instanceof AppError) {
+      if (err instanceof AppError && (err as { status?: number }).status !== 429) {
         delete this.state.sessions?.[userId];
         this.store.save();
         throw new AppError("CLOUD_SESSION", "Sua sessão na nuvem expirou. Entre novamente.");
@@ -197,6 +205,7 @@ export class CloudService {
     local.avatarHue = p.avatar_hue;
     if (password) Object.assign(local, (({ hash, salt }) => ({ passwordHash: hash, salt }))(hashPassword(password)));
     local.lastLoginAt = new Date().toISOString();
+    this.state.linked = { ...(this.state.linked ?? {}), [p.id]: true };
     this.store.save();
     return local;
   }
@@ -218,7 +227,9 @@ export class CloudService {
     } catch (err) {
       if (err instanceof NetworkError) return null;
       const existing = this.store.findUserByUsername(username);
-      if (existing && existing.salt && local.verify(existing, password)) {
+      // Só sobe para a nuvem uma conta que nunca esteve lá. Se ela já esteve e o
+      // login falhou, a senha mudou em outro aparelho ou o Dono excluiu a conta.
+      if (existing && existing.salt && !this.state.linked?.[existing.id] && local.verify(existing, password)) {
         try {
           session = await this.signUp({ username: existing.username, password, name: existing.name, email: existing.email, avatarHue: existing.avatarHue });
           migrated = existing;
@@ -238,11 +249,9 @@ export class CloudService {
     const user = this.adopt(p, password, local.hash);
     if (migrated) {
       // Conta criada antes da nuvem: os dados deste aparelho sobem.
-      this.markDirty(user.id);
-      await this.push(user.id).catch(() => undefined);
-    } else {
-      await this.pull(user.id, p).catch(() => undefined);
+      this.markDirty(user.id, Object.keys(this.store.rawData(user.id)));
     }
+    await this.pull(user.id, p).catch(() => undefined);
     void this.request(`/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", token: tokens.access, body: { last_login_at: new Date().toISOString() } }).catch(() => undefined);
     return user;
   }
@@ -268,22 +277,50 @@ export class CloudService {
     return this.adopt(p, input.password, hash);
   }
 
+  get aiPending(): CloudState["aiPending"] {
+    return this.state.aiPending;
+  }
+
+  set aiPending(v: CloudState["aiPending"]) {
+    this.state.aiPending = v;
+    this.store.save();
+  }
+
   logout(userId: string | null): void {
     if (!userId) return;
     void this.push(userId).catch(() => undefined);
   }
 
   // ---- dados ----
+  // Os dados de cada conta ficam num documento só na nuvem. Para dois aparelhos
+  // não apagarem as mudanças um do outro: cada aparelho marca quais partes
+  // (gastos, faturas, metas…) mudou; o envio só vale se a nuvem ainda estiver
+  // na versão que o aparelho conhece; se outro aparelho mudou antes, o app
+  // junta as duas versões (as partes mudadas aqui + o resto da nuvem) e envia
+  // de novo.
 
-  markDirty(userId: string): void {
-    this.state.dirty = { ...(this.state.dirty ?? {}), [userId]: Date.now() };
+  markDirty(userId: string, keys: string[]): void {
+    if (!keys.length) return;
+    const now = Date.now();
+    const cur = { ...(this.state.dirtyKeys?.[userId] ?? {}) };
+    for (const k of keys) cur[k] = now;
+    this.state.dirtyKeys = { ...(this.state.dirtyKeys ?? {}), [userId]: cur };
     this.store.save();
   }
 
+  private dirtyOf(userId: string): Record<string, number> {
+    // Migra o formato antigo (conta inteira marcada).
+    if (this.state.dirty?.[userId]) {
+      delete this.state.dirty[userId];
+      this.markDirty(userId, Object.keys(this.store.rawData(userId)));
+    }
+    return this.state.dirtyKeys?.[userId] ?? {};
+  }
+
   /** Envia os dados da conta alguns segundos depois da última mudança. */
-  schedulePush(userId: string): void {
+  schedulePush(userId: string, keys: string[]): void {
     if (!this.enabled) return;
-    this.markDirty(userId);
+    this.markDirty(userId, keys);
     clearTimeout(this.pushTimers.get(userId));
     this.pushTimers.set(
       userId,
@@ -292,22 +329,45 @@ export class CloudService {
   }
 
   async push(userId: string): Promise<void> {
-    if (!this.enabled || !this.state.dirty?.[userId]) return;
-    const token = await this.token(userId);
-    const now = new Date().toISOString();
-    const rows = await this.request<CloudProfile[]>(`/rest/v1/profiles?id=eq.${userId}&select=data_updated_at`, {
-      method: "PATCH",
-      token,
-      prefer: "return=representation",
-      body: { data: this.store.rawData(userId), data_updated_at: now },
-    });
-    this.state.syncedAt = { ...(this.state.syncedAt ?? {}), [userId]: rows[0]?.data_updated_at ?? now };
-    delete this.state.dirty[userId];
-    this.store.save();
+    if (!this.enabled) return;
+    const dirty = this.dirtyOf(userId);
+    if (!Object.keys(dirty).length) return;
+    if (this.pushing.has(userId)) {
+      this.pushAgain.add(userId);
+      return;
+    }
+    this.pushing.add(userId);
+    try {
+      const synced = this.state.syncedAt?.[userId];
+      // Sem saber a versão da nuvem, primeiro busca e junta.
+      if (!synced) {
+        await this.pull(userId, undefined, true);
+        return;
+      }
+      const sent = { ...dirty };
+      const token = await this.token(userId);
+      const rows = await this.request<CloudProfile[]>(
+        `/rest/v1/profiles?id=eq.${userId}&data_updated_at=eq.${encodeURIComponent(synced)}&select=data_updated_at`,
+        { method: "PATCH", token, prefer: "return=representation", body: { data: this.store.rawData(userId), data_updated_at: new Date().toISOString() } }
+      );
+      if (!rows.length) {
+        // Outro aparelho mudou a nuvem antes: junta e tenta de novo.
+        await this.pull(userId, undefined, true);
+        return;
+      }
+      this.state.syncedAt = { ...(this.state.syncedAt ?? {}), [userId]: rows[0].data_updated_at };
+      // Só limpa o que foi enviado; o que mudou durante o envio continua pendente.
+      const cur = this.state.dirtyKeys?.[userId] ?? {};
+      for (const [k, t] of Object.entries(sent)) if (cur[k] === t) delete cur[k];
+      this.store.save();
+    } finally {
+      this.pushing.delete(userId);
+      if (this.pushAgain.delete(userId)) void this.push(userId).catch(() => undefined);
+    }
   }
 
-  /** Traz os dados da nuvem quando lá estão mais novos. Devolve true se algo mudou aqui. */
-  async pull(userId: string, known?: CloudProfile): Promise<boolean> {
+  /** Traz os dados da nuvem e junta com as mudanças locais ainda não enviadas. Devolve true se algo mudou aqui. */
+  async pull(userId: string, known?: CloudProfile, fromPush = false): Promise<boolean> {
     if (!this.enabled) return false;
     const token = await this.token(userId);
     const p = known ?? (await this.profile(userId, token));
@@ -321,21 +381,35 @@ export class CloudService {
       changed = true;
     }
     const synced = this.state.syncedAt?.[userId];
-    const remoteNewer = !synced || Date.parse(p.data_updated_at) > Date.parse(synced);
-    const remoteEmpty = !p.data || Object.keys(p.data).length === 0;
-    const dirtyAt = this.state.dirty?.[userId];
-    if (remoteEmpty) {
-      this.markDirty(userId);
-      await this.push(userId);
-    } else if (remoteNewer && (!dirtyAt || Date.parse(p.data_updated_at) > dirtyAt)) {
-      this.store.replaceData(userId, p.data);
+    const dirty = this.dirtyOf(userId);
+    const localData = this.store.rawData(userId) as Record<string, unknown>;
+    const remote = (p.data ?? {}) as Record<string, unknown>;
+    if (!Object.keys(remote).length) {
+      // Nuvem vazia (conta nova ou recém-migrada): tudo daqui sobe.
       this.state.syncedAt = { ...(this.state.syncedAt ?? {}), [userId]: p.data_updated_at };
-      if (this.state.dirty) delete this.state.dirty[userId];
-      changed = true;
-    } else if (dirtyAt) {
-      await this.push(userId);
+      this.markDirty(userId, Object.keys(localData));
+    } else if (p.data_updated_at !== synced) {
+      const merged: Record<string, unknown> = { ...remote };
+      for (const k of Object.keys(dirty)) if (localData[k] !== undefined) merged[k] = localData[k];
+      if (!synced) {
+        // Primeira vez deste aparelho com a nuvem: guarda uma cópia do que havia
+        // aqui e mantém as partes que a nuvem ainda não tem.
+        if (Object.keys(localData).length) this.store.writeExtra(`investa-backup-antes-da-nuvem-${userId}.json`, JSON.stringify(localData));
+        const extra = Object.keys(localData).filter((k) => merged[k] === undefined);
+        for (const k of extra) merged[k] = localData[k];
+        this.markDirty(userId, extra);
+      }
+      if (JSON.stringify(merged) !== JSON.stringify(localData)) {
+        this.store.replaceData(userId, merged);
+        changed = true;
+      }
+      this.state.syncedAt = { ...(this.state.syncedAt ?? {}), [userId]: p.data_updated_at };
     }
     this.store.save();
+    if (Object.keys(this.state.dirtyKeys?.[userId] ?? {}).length) {
+      if (fromPush) this.pushAgain.add(userId);
+      else await this.push(userId);
+    }
     return changed;
   }
 

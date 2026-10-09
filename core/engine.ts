@@ -29,7 +29,9 @@ export class AlertEngine {
   private running = false;
 
   /** Avisado quando o motor muda dados do usuário (para sincronizar e atualizar a tela). */
-  onDataChanged?: (userId: string) => void;
+  onDataChanged?: (userId: string, keys: string[]) => void;
+  /** Enquanto falso, o motor não mexe em dados (espera a primeira sincronização com a nuvem). */
+  dataReady = true;
 
   constructor(private store: Store, private emit: (userId: string, n: AppNotification) => void) {}
 
@@ -161,6 +163,7 @@ export class AlertEngine {
 
   /** Caixinhas: no dia marcado, guarda o valor do mês (uma vez por mês). */
   private boxes(userId: string): void {
+    if (!this.dataReady) return;
     const today = todayIsoSaoPaulo();
     const ym = today.slice(0, 7);
     const day = Number(today.slice(8, 10));
@@ -188,7 +191,7 @@ export class AlertEngine {
     });
     if (changed) {
       this.store.setData(userId, "boxes", next);
-      this.onDataChanged?.(userId);
+      this.onDataChanged?.(userId, ["boxes"]);
     }
   }
 

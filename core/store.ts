@@ -148,6 +148,15 @@ export class Store {
     this.save();
   }
 
+  /** Grava um arquivo extra na pasta de dados (ex.: cópia de segurança). */
+  writeExtra(name: string, data: string): void {
+    try {
+      this.files.write(name, data);
+    } catch {
+      // sem disco: segue sem a cópia
+    }
+  }
+
   rawData(userId: string): Partial<UserDataMap> {
     return this.db.data[userId] ?? {};
   }

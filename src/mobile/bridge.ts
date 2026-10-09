@@ -57,8 +57,11 @@ export async function installMobileBridge(): Promise<void> {
   const listeners = new Map<string, Set<Listener>>();
   const emit = (channel: string, payload: unknown) => listeners.get(channel)?.forEach((cb) => cb(payload));
   let active = true;
+  let backendRef: Backend | null = null;
   App.addListener("appStateChange", (s) => {
     active = s.isActive;
+    // Voltou para o app: busca o que mudou no PC antes de qualquer edição.
+    if (s.isActive) void backendRef?.sync();
   });
 
   // A IA responde em streaming. Tenta primeiro o fetch do próprio WebView (que
@@ -154,6 +157,7 @@ export async function installMobileBridge(): Promise<void> {
   };
 
   const backend = new Backend(platform);
+  backendRef = backend;
   window.investa = {
     platform: platform.os,
     invoke: (channel: string, args?: unknown) => backend.invoke(channel, args),

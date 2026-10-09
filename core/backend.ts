@@ -63,8 +63,8 @@ export class Backend {
     this.cloud = new CloudService(this.store);
     this.engine = new AlertEngine(this.store, (userId, n) => this.onNotification(userId, n));
     // O motor mexeu nos dados (ex.: depósito automático das caixinhas): sobe para a nuvem e atualiza a tela.
-    this.engine.onDataChanged = (userId) => {
-      this.cloud.schedulePush(userId);
+    this.engine.onDataChanged = (userId, keys) => {
+      this.cloud.schedulePush(userId, keys);
       if (userId === this.currentUserId) {
         const u = this.store.findUser(userId);
         this.platform.emit("data:changed", u ? this.store.toPublic(u) : null);
@@ -97,14 +97,24 @@ export class Backend {
         this.platform.emit("session:ended", "Esta conta foi bloqueada pelo Dono do aplicativo.");
       } else if (changed && userId === this.currentUserId) {
         this.platform.emit("data:changed", u ? this.store.toPublic(u) : null);
-        this.engine.runNow();
       }
     } catch (err) {
       if (err instanceof AppError && err.code === "USER_NOT_FOUND") {
         this.endSession();
         this.platform.emit("session:ended", "Esta conta foi excluída.");
+        return;
+      }
+      if (err instanceof AppError && err.code === "CLOUD_SESSION") {
+        this.endSession();
+        this.platform.emit("session:ended", "Sua sessão na nuvem expirou. Entre de novo para continuar sincronizando entre os aparelhos.");
+        return;
       }
       // sem internet: tenta de novo no próximo ciclo
+    } finally {
+      if (userId === this.currentUserId && !this.engine.dataReady) {
+        this.engine.dataReady = true;
+        this.engine.runNow();
+      }
     }
   }
 
@@ -114,6 +124,13 @@ export class Backend {
    * nuvem ainda não tem (chave colocada antes da nuvem), o Dono envia a dele.
    */
   private async syncAiKey(userId: string): Promise<void> {
+    // Mudança do Dono feita sem internet: envia antes de buscar, para não ser desfeita.
+    const pending = this.cloud.aiPending;
+    if (pending && this.isOwner(userId)) {
+      await this.cloud.pushAi(userId, pending);
+      this.cloud.aiPending = undefined;
+      return;
+    }
     const local = this.ai.resolve();
     const ai = await this.cloud.pullAi(userId, !local.key);
     if (ai?.apiKey) {
@@ -200,6 +217,8 @@ export class Backend {
       delete this.store.app.session;
     }
     this.store.save();
+    // Com a nuvem, o motor só mexe em dados (caixinhas) depois da primeira sincronização.
+    this.engine.dataReady = !this.cloud.enabled;
     this.engine.start(userId);
   }
 
@@ -303,6 +322,7 @@ export class Backend {
         user = this.auth.register(input);
       }
       this.startSession(user.id, !!a.remember);
+      this.engine.dataReady = true;
       return user;
     });
     this.on("auth:login", async (a: { username: string; password: string; remember?: boolean }) => {
@@ -312,7 +332,10 @@ export class Backend {
       const cloudUser = this.cloud.enabled ? await this.cloud.login(username, password, this.auth.localPassword) : null;
       const user = cloudUser ? this.store.toPublic(cloudUser) : this.auth.login(username, password);
       this.startSession(user.id, !!a.remember);
-      if (cloudUser) void this.syncAiKey(user.id).catch(() => undefined);
+      if (cloudUser) {
+        this.engine.dataReady = true;
+        void this.syncAiKey(user.id).catch(() => undefined);
+      }
       return user;
     });
     this.on("auth:logout", () => {
@@ -385,7 +408,7 @@ export class Backend {
       const isArray = ["portfolio", "goals", "expenses", "alerts", "chat", "invoices", "accounts", "bills", "memory", "planned", "boxes"].includes(a.key);
       if (isArray !== Array.isArray(a.value) || a.value === null || typeof a.value !== "object") throw new AppError("INVALID", "Formato inválido.");
       this.store.setData(this.uid(), a.key, a.value);
-      this.cloud.schedulePush(this.uid());
+      this.cloud.schedulePush(this.uid(), [a.key]);
       if (a.key === "alerts" || a.key === "portfolio" || a.key === "settings" || a.key === "invoices" || a.key === "bills" || a.key === "boxes") this.engine.runNow();
       return true;
     });
@@ -473,10 +496,16 @@ export class Backend {
       this.requireOwner();
       this.ai.setConfig(a);
       if (this.cloud.enabled) {
-        // A chave vale para todas as contas, em qualquer aparelho.
+        // A chave vale para todas as contas, em qualquer aparelho. Se estiver sem
+        // internet, fica pendente e sobe na próxima sincronização.
         const r = this.ai.resolve();
+        const payload = { apiKey: r.source === "app" ? r.key : null, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "", searchKey: this.ai.searchKey() };
+        this.cloud.aiPending = payload;
         void this.cloud
-          .pushAi(this.uid(), { apiKey: r.source === "app" ? r.key : null, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "", searchKey: this.ai.searchKey() })
+          .pushAi(this.uid(), payload)
+          .then(() => {
+            if (this.cloud.aiPending === payload) this.cloud.aiPending = undefined;
+          })
           .catch(() => undefined);
       }
       return this.ai.info(true);
@@ -702,7 +731,7 @@ ${resultsToContext(results)}`;
       }
       if (!Object.keys(clean).length) throw new AppError("INVALID", "O backup não tem dados para restaurar.");
       this.store.replaceData(userId, { ...this.store.rawData(userId), ...clean });
-      this.cloud.schedulePush(userId);
+      this.cloud.schedulePush(userId, Object.keys(clean));
       this.engine.runNow();
       return this.store.getAllData(userId);
     });
