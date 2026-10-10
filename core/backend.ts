@@ -25,7 +25,7 @@ import { BOOK_PRINCIPLES, resultsToContext, webSearch, type SearchResult } from 
 
 const VALID_RANGES: ChartRange[] = ["1D", "5D", "1M", "6M", "1A", "5A", "MAX"];
 const MODES: AiMode[] = ["geral", "professor", "app", "financas", "mercado", "compras"];
-const PUBLIC_CHANNELS = new Set(["app:info", "auth:session", "auth:register", "auth:login", "auth:logout", "window:setTheme", "shell:openExternal"]);
+const PUBLIC_CHANNELS = new Set(["app:info", "auth:session", "auth:register", "auth:login", "auth:logout", "window:setTheme", "app:icon", "shell:openExternal"]);
 const SYNC_EVERY = 45_000;
 
 /** Mensagem que quem não é Dono vê quando a IA falha. */
@@ -758,6 +758,15 @@ ${resultsToContext(results)}`;
       this.store.save();
       p.setTheme?.(theme);
       return true;
+    });
+    this.on("app:icon", async (a?: { variant?: "dark" | "light" }) => {
+      if (a?.variant) {
+        const variant = a.variant === "light" ? "light" : "dark";
+        if (variant !== (this.store.app.appIcon ?? "dark")) await p.setAppIcon?.(variant);
+        this.store.app.appIcon = variant;
+        this.store.save();
+      }
+      return { variant: this.store.app.appIcon ?? "dark", supported: !!p.setAppIcon };
     });
     this.on("shell:openExternal", (a: { url: string }) => {
       if (/^https:\/\//.test(a.url)) p.openExternal(a.url);

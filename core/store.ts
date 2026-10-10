@@ -57,6 +57,8 @@ interface DBShape {
     ai?: AiStoredConfig;
     session?: { userId: string; token: string; expiresAt: string };
     lastTheme?: "dark" | "light";
+    /** Ícone do app escolhido neste aparelho (Configurações → Aparência). */
+    appIcon?: "dark" | "light";
     cloud?: CloudState;
     aiLog?: AiLogEntry[];
   };

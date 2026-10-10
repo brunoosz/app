@@ -38,6 +38,8 @@ import { Field, Input, PasswordInput, SegmentedControl, Toggle } from "@/compone
 import { ConfirmDialog, Sheet } from "@/components/ui/Sheet";
 import { ExpenseFields, IncomeFields, InvestFields, ProfileFields, RISK_LABEL, totalExpenses, totalIncome } from "@/components/ProfileForm";
 import { ErrorBanner } from "@/pages/auth/Login";
+import { AppIcon } from "@/components/Logo";
+import { changeIconVariant, useIconVariant } from "@/lib/appIcon";
 
 
 /** Cópia de todos os dados da conta num arquivo, para guardar fora do app ou restaurar. */
@@ -696,6 +698,7 @@ export function Configuracoes() {
               ]}
             />
           </Card>
+          <IconPicker />
         </Section>
 
         <Section title="Segurança">
@@ -784,5 +787,58 @@ function ToggleRow({ title, subtitle, checked, onChange }: { title: string; subt
       </div>
       <Toggle checked={checked} onChange={onChange} />
     </div>
+  );
+}
+
+/** Trocar ícone: escuro ou claro, neste aparelho (janela e barra de tarefas no PC, tela inicial no Android). */
+function IconPicker() {
+  const current = useIconVariant();
+  const toast = useUi((s) => s.toast);
+  const [busy, setBusy] = useState(false);
+  const pick = async (v: "dark" | "light") => {
+    if (v === current || busy) return;
+    setBusy(true);
+    try {
+      await changeIconVariant(v);
+      toast({
+        title: v === "light" ? "Ícone claro ativado" : "Ícone escuro ativado",
+        message: document.documentElement.classList.contains("native-app") ? "O ícone muda na tela inicial quando você sair do app." : undefined,
+        tone: "success",
+      });
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card className="mt-3">
+      <div className="flex items-center gap-3 mb-1">
+        <Sparkles size={20} className="text-primary" />
+        <div className="font-medium">Trocar ícone</div>
+      </div>
+      <div className="text-[13px] text-muted mb-4">O ícone do app neste aparelho.</div>
+      <div className="grid grid-cols-2 gap-3">
+        {(["dark", "light"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={current === v}
+            disabled={busy}
+            onClick={() => void pick(v)}
+            className={clsx(
+              "rounded-2xl p-4 flex flex-col items-center gap-3 border-2 transition-colors",
+              current === v ? "border-primary bg-primary/[0.06]" : "border-transparent bg-line/[0.04] hover:bg-line/[0.07]"
+            )}
+          >
+            <AppIcon size={64} variant={v} />
+            <span className="text-[14px] font-medium flex items-center gap-1.5">
+              {current === v && <CircleCheck size={15} className="text-primary" />}
+              {v === "dark" ? "Escuro" : "Claro"}
+            </span>
+          </button>
+        ))}
+      </div>
+    </Card>
   );
 }

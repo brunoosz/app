@@ -25,7 +25,14 @@ let quitting = false;
 let backend: Backend;
 
 const resourcesDir = app.isPackaged ? path.join(process.resourcesPath, "resources") : path.join(__dirname, "..", "resources");
-const iconPath = path.join(resourcesDir, "icon.png");
+const defaultIcon = path.join(resourcesDir, "icon.png");
+
+/** Ícone escolhido em Configurações → Trocar ícone (escuro ou claro). */
+function iconFile(variant?: "dark" | "light"): string | undefined {
+  const file = path.join(resourcesDir, `icon-${variant ?? backend?.store.app.appIcon ?? "dark"}.png`);
+  if (fs.existsSync(file)) return file;
+  return fs.existsSync(defaultIcon) ? defaultIcon : undefined;
+}
 
 function themeColors(theme: "dark" | "light") {
   return theme === "light" ? { bg: "#F2F4F8", symbol: "#334155" } : { bg: "#0B0F1A", symbol: "#CBD5E1" };
@@ -101,7 +108,7 @@ function createPlatform(): Platform {
     notify(n, settings) {
       const focused = win?.isFocused() && win.isVisible();
       if (settings.desktopNotifications && !focused && Notification.isSupported()) {
-        const toast = new Notification({ title: n.title, body: n.message, icon: fs.existsSync(iconPath) ? iconPath : undefined, silent: false });
+        const toast = new Notification({ title: n.title, body: n.message, icon: iconFile(), silent: false });
         toast.on("click", () => showWindow(n.link ?? "/alertas"));
         toast.show();
       }
@@ -145,6 +152,11 @@ function createPlatform(): Platform {
       spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script], { windowsHide: true, stdio: "ignore" }).on("error", () => undefined);
       return { mode: "system" as const };
     },
+    setAppIcon(variant) {
+      const file = iconFile(variant);
+      if (file) win?.setIcon(nativeImage.createFromPath(file));
+      tray?.setImage(trayImage(variant));
+    },
     setTheme(theme) {
       const c = themeColors(theme);
       if (win && process.platform !== "darwin") {
@@ -170,7 +182,7 @@ function createWindow(): void {
     show: false,
     title: "Investa",
     backgroundColor: colors.bg,
-    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    icon: iconFile(),
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     trafficLightPosition: { x: 18, y: 16 },
     titleBarOverlay: process.platform === "darwin" ? undefined : { color: colors.bg, symbolColor: colors.symbol, height: 44 },
@@ -207,10 +219,14 @@ function createWindow(): void {
   else void win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 }
 
+function trayImage(variant?: "dark" | "light") {
+  const file = iconFile(variant);
+  return file ? nativeImage.createFromPath(file).resize({ width: 16, height: 16 }) : nativeImage.createEmpty();
+}
+
 function ensureTray(): void {
   if (tray) return;
-  const image = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }) : nativeImage.createEmpty();
-  tray = new Tray(image);
+  tray = new Tray(trayImage());
   tray.setToolTip("Investa — alertas ativos");
   tray.setContextMenu(
     Menu.buildFromTemplate([

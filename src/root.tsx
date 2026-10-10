@@ -6,9 +6,11 @@ import "./index.css";
 import { initialTheme } from "@/store/ui";
 import App from "./App";
 import { installAutoFit } from "@/lib/autofit";
+import { loadIconVariant } from "@/lib/appIcon";
 
 export function renderApp(): void {
   initialTheme();
+  loadIconVariant();
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <HashRouter>

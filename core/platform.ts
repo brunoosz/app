@@ -53,6 +53,8 @@ export interface Platform {
   saveReport(report: ReportFile): Promise<{ path: string } | null>;
   openExternal(url: string): void;
   setTheme?(theme: "dark" | "light"): void;
+  /** Troca o ícone do app (janela/barra de tarefas no PC, ícone da tela inicial no Android). */
+  setAppIcon?(variant: "dark" | "light"): Promise<void> | void;
   /**
    * Ditado por voz. "text": o texto já veio (celular). "system": o sistema
    * vai digitar no campo focado (digitação por voz do Windows).

@@ -5,6 +5,8 @@
 import { Capacitor, CapacitorHttp, registerPlugin } from "@capacitor/core";
 
 /** Plugin nativo do app (android/…/VoiceInputPlugin.java): ditado pelo reconhecimento de voz do Android. */
+/** Plugin nativo (android/…/AppIconPlugin.java): troca o ícone da tela inicial. */
+const AppIcon = registerPlugin<{ set(o: { variant: "dark" | "light" }): Promise<void> }>("AppIcon");
 const VoiceInput = registerPlugin<{ listen(o: { language?: string; prompt?: string }): Promise<{ text: string }> }>("VoiceInput");
 import { App } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
@@ -153,6 +155,9 @@ export async function installMobileBridge(): Promise<void> {
     async voiceInput() {
       const r = await VoiceInput.listen({ language: "pt-BR", prompt: "Fale com o Assistente" });
       return { mode: "text" as const, text: r.text };
+    },
+    async setAppIcon(variant) {
+      await AppIcon.set({ variant });
     },
     setTheme(theme) {
       void StatusBar.setStyle({ style: theme === "light" ? Style.Light : Style.Dark }).catch(() => undefined);

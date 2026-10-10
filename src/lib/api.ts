@@ -150,6 +150,7 @@ export const api = {
     check: (query: string, price?: number) => call<DealCheck>("deals:check", { query, price }),
     context: (deal: DealCheck, installments?: number) => call<string>("deals:context", { deal, installments }),
   },
+  appIcon: (variant?: "dark" | "light") => call<{ variant: "dark" | "light"; supported: boolean }>("app:icon", variant ? { variant } : undefined),
   setTheme: (theme: "dark" | "light") => call<boolean>("window:setTheme", { theme }),
   openExternal: (url: string) => call<boolean>("shell:openExternal", { url }),
 

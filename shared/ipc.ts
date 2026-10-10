@@ -1,5 +1,6 @@
 export const INVOKE_CHANNELS = [
   "app:info",
+  "app:icon",
   "auth:session",
   "auth:register",
   "auth:login",

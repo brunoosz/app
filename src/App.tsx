@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useSession, isManager } from "@/store/session";
-import { LogoMark } from "@/components/Logo";
+import { AppIcon } from "@/components/Logo";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Login } from "@/pages/auth/Login";
 import { Register } from "@/pages/auth/Register";
@@ -29,18 +29,7 @@ function Splash() {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-5">
       <div className="drag fixed inset-x-0 top-0 h-12" />
-      <div
-        className="flex items-center justify-center"
-        style={{
-          width: 112,
-          height: 112,
-          borderRadius: 28,
-          background: "radial-gradient(circle at 50% 42%, rgba(79,140,255,0.28), transparent 62%), linear-gradient(135deg, #232B45, #0B0F1A)",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 30px 60px -18px rgba(79,140,255,0.55)",
-        }}
-      >
-        <LogoMark size={72} animated />
-      </div>
+      <AppIcon size={112} animated />
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="text-center">
         <div className="text-[28px] font-bold tracking-tight">Investa</div>
         <div className="text-[10px] tracking-[0.32em] text-muted mt-1.5 font-semibold">APRENDA · INVISTA · EVOLUA</div>

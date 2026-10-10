@@ -213,6 +213,17 @@ await wait(500);
 const memOk = (await win.locator('input[aria-label="Item da memória"]').count()) === 1;
 console.log(`[memoria] item salvo: ${memOk ? "sim" : "NÃO"}`);
 if (!memOk) pageErrors.push("Memória do Assistente não salvou");
+// Trocar ícone: escolher o claro e conferir que ficou marcado.
+{
+  const light = win.getByRole("button", { name: "Claro" }).last();
+  await light.scrollIntoViewIfNeeded();
+  await light.click();
+  await wait(600);
+  const iconOk = (await light.getAttribute("aria-pressed")) === "true";
+  console.log(`[trocar-icone] claro ativo: ${iconOk ? "sim" : "NÃO"}`);
+  if (!iconOk) pageErrors.push("Trocar ícone não mudou para o claro");
+  await win.screenshot({ path: path.join(shots, "configuracoes-icone.png") });
+}
 
 const notifications = await win.evaluate(() => document.querySelector('[aria-label="Notificações"]')?.textContent ?? "");
 console.log(`[notificacoes-nao-lidas] ${notifications || "0"}`);
