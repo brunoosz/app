@@ -228,6 +228,130 @@ if (!memOk) pageErrors.push("Memória do Assistente não salvou");
 const notifications = await win.evaluate(() => document.querySelector('[aria-label="Notificações"]')?.textContent ?? "");
 console.log(`[notificacoes-nao-lidas] ${notifications || "0"}`);
 
+// Tela travada: abre e fecha janelas, a busca e o menu muito rápido (com Esc e
+// clique no fundo no meio da animação) e confere que nada ficou por cima da tela
+// e que um clique comum ainda funciona.
+const freezeIssues = [];
+const tryStep = async (label, fn) => {
+  try {
+    await fn();
+  } catch (err) {
+    freezeIssues.push(`[${label}] ${String(err.message).split("\n")[0]}`);
+  }
+};
+const overlayOpen = () =>
+  win.evaluate(
+    () =>
+      document.documentElement.hasAttribute("data-overlay") ||
+      [...document.querySelectorAll('[role="dialog"], input[placeholder^="Busque"]')].some((el) => !el.closest('[aria-hidden="true"]'))
+  );
+const closeAll = async () => {
+  for (let i = 0; i < 4 && (await overlayOpen()); i++) {
+    await win.keyboard.press("Escape");
+    await wait(80);
+  }
+};
+const assertResponsive = async (label) => {
+  await wait(1200);
+  const state = await win.evaluate(() => {
+    const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    return {
+      sobras: document.querySelectorAll("[data-overlay-frame]").length,
+      aberta: document.documentElement.hasAttribute("data-overlay"),
+      centroBloqueado: !!el?.closest("[data-overlay-frame], .fixed.inset-0"),
+      centro: el ? `${el.tagName}.${String(el.className).slice(0, 60)}` : "nada",
+    };
+  });
+  if (state.sobras || state.aberta || state.centroBloqueado) freezeIssues.push(`[${label}] camada sobrando na tela: ${JSON.stringify(state)}`);
+  // Clique de verdade (na posição do link do menu) para outra tela: a tela tem que responder.
+  const box = await win.evaluate(() => {
+    const here = location.hash || "#/";
+    const links = [...document.querySelectorAll('a[href^="#/"]')].filter((a) => a.getBoundingClientRect().width > 0 && a.getAttribute("href") !== here);
+    const link = links.find((a) => a.getAttribute("href") === "#/") ?? links[0];
+    const r = link?.getBoundingClientRect();
+    return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2, href: link.getAttribute("href") } : null;
+  });
+  if (!box) return void freezeIssues.push(`[${label}] nenhum link do menu encontrado`);
+  await win.mouse.click(box.x, box.y);
+  await wait(700);
+  const hash = await win.evaluate(() => location.hash || "#/");
+  if (hash !== box.href) freezeIssues.push(`[${label}] clique no menu não respondeu (ia para ${box.href}, continua em ${hash})`);
+  console.log(`[travamento-${label}] ${JSON.stringify(state)} clique: ${hash === box.href ? "ok" : "NÃO"}`);
+};
+
+await tryStep("janela", async () => {
+  await win.evaluate(() => (location.hash = "#/carteira"));
+  await wait(1500);
+  const add = win.getByRole("button", { name: "Adicionar investimento" }).first();
+  for (let i = 0; i < 12; i++) {
+    if (i % 4 === 3) await add.dblclick({ timeout: 3000 });
+    else await add.click({ timeout: 3000 });
+    await wait((i * 37) % 130);
+    if (i % 3 === 2) await win.mouse.click(300, 60);
+    else await win.keyboard.press("Escape");
+    await wait((i * 23) % 70);
+    await closeAll();
+  }
+});
+await tryStep("busca", async () => {
+  for (let i = 0; i < 14; i++) {
+    await win.keyboard.press("Control+k");
+    await wait((i % 4) * 25);
+    if (i % 3 === 0) await win.keyboard.press("Escape");
+  }
+  await closeAll();
+});
+await tryStep("confirmar", async () => {
+  const out = win.getByRole("button", { name: "Sair da conta" }).first();
+  for (let i = 0; i < 6; i++) {
+    await out.click({ timeout: 3000 });
+    await wait(i * 30);
+    if (i % 2) await win.keyboard.press("Escape");
+    else await win.getByRole("dialog").getByRole("button", { name: "Cancelar" }).click({ timeout: 3000 });
+  }
+  await closeAll();
+});
+await tryStep("janela-escondida", async () => {
+  await win.getByRole("button", { name: "Adicionar investimento" }).first().click({ timeout: 3000 }).catch(async () => {
+    await win.evaluate(() => (location.hash = "#/carteira"));
+    await wait(1200);
+    await win.getByRole("button", { name: "Adicionar investimento" }).first().click({ timeout: 3000 });
+  });
+  await wait(250);
+  await win.keyboard.press("Escape");
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide());
+  await wait(1500);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
+});
+await tryStep("navegacao", async () => {
+  const routes = ["", "carteira", "gastos", "objetivos", "mercado", "alertas", "configuracoes", "plano", "aulas"];
+  for (let i = 0; i < 27; i++) {
+    await win.evaluate((r) => (location.hash = `#/${r}`), routes[i % routes.length]);
+    if (i % 5 === 0) await win.keyboard.press("Control+k");
+    await wait((i % 4) * 20);
+  }
+  await closeAll();
+});
+await assertResponsive("computador");
+// Animação de fechar que não termina (quadros parados, como com a janela coberta
+// ou o app em segundo plano): a janela que está saindo não pode segurar os cliques.
+await tryStep("animacao-parada", async () => {
+  const cdp = await win.context().newCDPSession(win);
+  await cdp.send("Animation.enable");
+  await win.evaluate(() => (location.hash = "#/carteira"));
+  await wait(1200);
+  await win.getByRole("button", { name: "Adicionar investimento" }).first().click({ timeout: 3000 });
+  await wait(600);
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  await win.keyboard.press("Escape");
+  try {
+    await assertResponsive("animacao-parada");
+  } finally {
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+    await cdp.detach();
+  }
+});
+
 // Celular e tablet: nenhuma tela pode ter texto saindo do card nem rolagem para o lado.
 const layoutIssues = [];
 const ROUTES = ["", "carteira", "mercado", "mercado/PETR4.SA", "aulas", "assistente", "simulador", "vale-a-pena", "plano", "logs", "objetivos", "gastos", "bancos", "alertas", "usuarios", "configuracoes"];
@@ -264,9 +388,35 @@ for (const [label, width, height] of [["celular", 380, 800], ["tablet", 768, 102
     if (r === "" || r === "gastos" || r === "simulador" || r === "carteira") await win.screenshot({ path: path.join(shots, `${label}-${r || "inicio"}.png`) });
   }
 }
+// Celular: menu "Mais" aberto e fechado muito rápido, e trocando de tela por ele.
+await tryStep("menu-mais", async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(380, 800));
+  await win.evaluate(() => (location.hash = "#/"));
+  await wait(1200);
+  const more = win.getByRole("button", { name: "Mais" });
+  for (let i = 0; i < 10; i++) {
+    await more.click({ timeout: 3000 });
+    await wait((i * 29) % 110);
+    if (i % 2) await win.keyboard.press("Escape");
+    else await win.mouse.click(190, 40);
+    await wait((i * 17) % 60);
+    await closeAll();
+  }
+  await more.click({ timeout: 3000 });
+  await wait(350);
+  await win.getByRole("dialog").getByRole("button", { name: /Gastos|Carteira|Objetivos/ }).first().click({ timeout: 3000 });
+  await wait(60);
+  await more.click({ timeout: 3000 });
+  await wait(40);
+  await win.keyboard.press("Escape");
+  await closeAll();
+});
+await assertResponsive("celular");
+
 console.log(`\nProblemas de layout (${layoutIssues.length}):\n${layoutIssues.join("\n")}`);
+console.log(`\nTela travada (${freezeIssues.length}):\n${freezeIssues.join("\n")}`);
 console.log(`\nErros no console (${consoleErrors.length}):\n${consoleErrors.slice(0, 20).join("\n")}`);
 console.log(`Exceções na página (${pageErrors.length}):\n${pageErrors.join("\n")}`);
 await app.close();
 fs.rmSync(dataDir, { recursive: true, force: true });
-process.exit(pageErrors.length || layoutIssues.length ? 1 : 0);
+process.exit(pageErrors.length || layoutIssues.length || freezeIssues.length ? 1 : 0);

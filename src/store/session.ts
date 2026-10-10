@@ -43,7 +43,11 @@ export const useSession = create<SessionState>((set, get) => ({
 
   signIn: async (user) => {
     set({ user, loaded: false });
-    const [data, notifications] = await Promise.all([api.data.getAll(), api.notifications.list().catch(() => [])]);
+    const [data, notifications] = await Promise.all([api.data.getAll(), api.notifications.list().catch(() => [])]).catch((err: unknown) => {
+      // Sem isso a abertura ficaria parada para sempre (conta aberta, dados não carregados).
+      set({ user: null });
+      throw err;
+    });
     set({ data, notifications, loaded: true });
     useUi.getState().applyTheme(data.settings.theme);
   },

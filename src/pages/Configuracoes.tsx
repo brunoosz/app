@@ -23,9 +23,10 @@ import {
   Trash,
   Download,
   Upload,
+  Zap,
 } from "lucide-react";
 import clsx from "clsx";
-import type { AiConfigInfo, FinancialProfile, UserSettings } from "@shared/types";
+import type { AiCatalog, AiConfigInfo, FinancialProfile, UserSettings } from "@shared/types";
 import { ROLE_LABEL } from "@shared/types";
 import { api, uid } from "@/lib/api";
 import { brl, relativeTime } from "@/lib/format";
@@ -428,37 +429,225 @@ function SearchSettings({ info, onChange }: { info?: AiConfigInfo | null; onChan
   );
 }
 
+/** Linha de escolha (modelo ou opção) que salva na hora, sem botão "Salvar". */
+function ChoiceRow({ selected, saving, onClick, title, sub, badge }: { selected: boolean; saving?: boolean; onClick: () => void; title: React.ReactNode; sub: React.ReactNode; badge?: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={clsx(
+        "w-full text-left flex items-center gap-3 rounded-2xl border px-4 py-3 transition",
+        selected ? "border-primary/60 bg-primary/[0.07]" : "border-line/10 hover:border-primary/30 hover:bg-line/[0.04]"
+      )}
+    >
+      <span
+        className={clsx(
+          "h-4 w-4 rounded-full border-2 shrink-0",
+          selected ? "border-primary bg-primary shadow-[inset_0_0_0_3px_rgb(var(--surface))]" : "border-line/30",
+          saving && "animate-pulse"
+        )}
+      />
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2 flex-wrap font-medium text-[14.5px]">
+          {title} {badge}
+        </span>
+        <span className="block text-[12.5px] text-muted truncate">{sub}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Groq: chave grátis e respostas bem mais rápidas. */
+function GroqSettings({ info, groqModels, onChange }: { info?: AiConfigInfo | null; groqModels?: AiCatalog["groq"]; onChange: () => void }) {
+  const toast = useUi((s) => s.toast);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pick, setPick] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const has = !!info?.hasGroq;
+  const selected = pick ?? info?.groqChoice;
+  useEffect(() => {
+    if (pick && info?.groqChoice === pick) setPick(null);
+  }, [info?.groqChoice, pick]);
+
+  const save = async () => {
+    const k = key.trim();
+    if (!k) return;
+    if (!k.startsWith("gsk_")) {
+      toast({ title: "Essa não parece uma chave da Groq", message: "A chave da Groq começa com gsk_. Copie de novo em console.groq.com/keys.", tone: "error" });
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.ai.test("groq", k);
+      await api.ai.setConfig({ groqKey: k });
+      setKey("");
+      onChange();
+      toast({ title: "Groq conectada", message: r.slice(0, 120), tone: "success" });
+    } catch (err) {
+      toastError(err, "A chave não funcionou");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const choose = async (patch: { groqModel?: string; primary?: "groq" | "nvidia" }) => {
+    if (patch.groqModel) setPick(patch.groqModel);
+    try {
+      await api.ai.setConfig(patch);
+      onChange();
+    } catch (err) {
+      setPick(null);
+      toastError(err);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-line/10 p-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Zap size={17} className="text-primary" />
+        <span className="font-semibold">Groq</span>
+        {has ? (
+          <Badge tone="success" icon={CircleCheck}>
+            Ligada
+          </Badge>
+        ) : (
+          <Badge tone="primary">Recomendado</Badge>
+        )}
+      </div>
+      <div className="text-[13px] text-muted mt-0.5">Grátis e bem mais rápida; crie a chave em console.groq.com.</div>
+      {has && info?.groqPreview && <div className="text-[13px] text-muted mt-2">Chave atual: {info.groqPreview}</div>}
+      <div className="flex flex-col sm:flex-row gap-2 mt-3">
+        <Input value={key} onChange={(e) => setKey(e.target.value)} placeholder={has ? "Nova chave (gsk_…)" : "gsk_…"} type="password" autoComplete="off" />
+        <Button onClick={() => void save()} loading={busy} disabled={!key.trim()}>
+          Testar e salvar
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2">
+        <Button size="sm" variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://console.groq.com/keys")}>
+          Criar chave na Groq
+        </Button>
+        {has && (
+          <Button size="sm" variant="ghost" className="text-danger" onClick={() => setConfirmRemove(true)}>
+            Remover chave
+          </Button>
+        )}
+      </div>
+      {has && (
+        <>
+          {info?.hasNvidia && (
+            <div className="mt-4">
+              <div className="label">Quem responde primeiro</div>
+              <SegmentedControl<"groq" | "nvidia">
+                value={info?.primary ?? "groq"}
+                onChange={(v) => void choose({ primary: v })}
+                options={[
+                  { value: "groq", label: "Groq (mais rápida)" },
+                  { value: "nvidia", label: "NVIDIA" },
+                ]}
+              />
+              <div className="text-[12px] text-muted mt-1.5">O outro fica de reserva: só entra se o primeiro falhar, e só naquela resposta.</div>
+            </div>
+          )}
+          <div className="label mt-4">Modelo da Groq</div>
+          <div className="space-y-2">
+            <ChoiceRow
+              selected={selected === "auto"}
+              saving={pick === "auto"}
+              onClick={() => void choose({ groqModel: "auto" })}
+              title="Automático"
+              sub={`Começa pelo ${groqModels?.[0]?.label ?? "Llama 3.3 70B"} e usa outro só se ele falhar.`}
+              badge={<Badge tone="primary">Recomendado</Badge>}
+            />
+            {(groqModels ?? []).map((m) => (
+              <ChoiceRow
+                key={m.id}
+                selected={selected === m.id}
+                saving={pick === m.id}
+                onClick={() => void choose({ groqModel: m.id })}
+                title={m.label}
+                sub={`${m.publisher} · ${m.id}`}
+                badge={m.tags.map((t) => (
+                  <Badge key={t}>{t}</Badge>
+                ))}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      <ConfirmDialog
+        open={confirmRemove}
+        onClose={() => setConfirmRemove(false)}
+        onConfirm={async () => {
+          setConfirmRemove(false);
+          try {
+            await api.ai.setConfig({ groqKey: null });
+            onChange();
+          } catch (err) {
+            toastError(err);
+          }
+        }}
+        title="Remover a chave da Groq?"
+        message={info?.hasNvidia ? "O Assistente passa a usar só a NVIDIA, que é mais lenta." : "O Assistente deixará de funcionar até uma nova chave ser configurada."}
+        confirmLabel="Remover"
+        danger
+      />
+    </div>
+  );
+}
+
 function AiSettings() {
   const info = useAsync("ai-info", () => api.ai.info(), { staleMs: 2_000 });
   const catalog = useAsync("ai-catalog", () => api.ai.catalog(), { staleMs: 60_000 });
   const toast = useUi((s) => s.toast);
   const [key, setKey] = useState("");
-  const [choice, setChoice] = useState<string | null>(null);
+  const [pick, setPick] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
-  const selected = choice ?? info.data?.choice ?? "auto";
+  // Enquanto a configuração carrega, nenhuma opção aparece marcada (nada de "Automático" piscando).
+  const selected = pick ?? info.data?.choice;
+  useEffect(() => {
+    if (pick && info.data?.choice === pick) setPick(null);
+  }, [info.data?.choice, pick]);
   const models = catalog.data?.models ?? [];
   const best = models.find((m) => m.id === catalog.data?.best);
   const visible = showAll ? models : models.slice(0, 10);
-  if (selected !== "auto" && !visible.some((m) => m.id === selected)) {
+  if (selected && selected !== "auto" && !visible.some((m) => m.id === selected)) {
     const extra = models.find((m) => m.id === selected);
     if (extra) visible.push(extra);
   }
+  const reloadAll = () => {
+    info.reload();
+    catalog.reload();
+  };
 
-  const save = async (patch?: { model?: string }) => {
+  const chooseModel = async (id: string) => {
+    if (id === info.data?.choice) return;
+    setPick(id);
+    try {
+      await api.ai.setConfig({ model: id });
+      info.reload();
+      toast({ title: "Modelo salvo", message: "Fica assim até você trocar.", tone: "success" });
+    } catch (err) {
+      setPick(null);
+      toastError(err);
+    }
+  };
+
+  const saveKey = async () => {
+    if (!key.trim()) return;
     setSaving(true);
     try {
-      await api.ai.setConfig({ apiKey: key.trim() || undefined, model: patch?.model ?? selected });
-      if (key.trim()) {
-        setKey("");
-        await catalog.reload();
-      }
+      await api.ai.setConfig({ apiKey: key.trim() });
+      setKey("");
+      await catalog.reload();
       info.reload();
-      toast({ title: "Configuração da IA salva", tone: "success" });
+      toast({ title: "Chave da NVIDIA salva", tone: "success" });
     } catch (err) {
       toastError(err);
     } finally {
@@ -469,12 +658,12 @@ function AiSettings() {
   const test = async () => {
     setTesting(true);
     try {
-      if (key.trim()) await api.ai.setConfig({ apiKey: key.trim(), model: selected });
+      if (key.trim()) await api.ai.setConfig({ apiKey: key.trim() });
       setKey("");
-      const r = await api.ai.test();
+      const r = await api.ai.test("nvidia");
       info.reload();
       void catalog.reload();
-      toast({ title: "IA conectada", message: r.slice(0, 120), tone: "success" });
+      toast({ title: "NVIDIA conectada", message: r.slice(0, 120), tone: "success" });
     } catch (err) {
       toastError(err, "Falha ao conectar");
     } finally {
@@ -496,26 +685,6 @@ function AiSettings() {
     }
   };
 
-  const row = (id: string, title: React.ReactNode, sub: React.ReactNode, badge?: React.ReactNode) => (
-    <button
-      key={id}
-      type="button"
-      onClick={() => setChoice(id)}
-      className={clsx(
-        "w-full text-left flex items-center gap-3 rounded-2xl border px-4 py-3 transition",
-        selected === id ? "border-primary/60 bg-primary/[0.07]" : "border-line/10 hover:border-primary/30 hover:bg-line/[0.04]"
-      )}
-    >
-      <span className={clsx("h-4 w-4 rounded-full border-2 shrink-0", selected === id ? "border-primary bg-primary shadow-[inset_0_0_0_3px_rgb(var(--surface))]" : "border-line/30")} />
-      <span className="flex-1 min-w-0">
-        <span className="flex items-center gap-2 flex-wrap font-medium text-[14.5px]">
-          {title} {badge}
-        </span>
-        <span className="block text-[12.5px] text-muted truncate">{sub}</span>
-      </span>
-    </button>
-  );
-
   return (
     <Card>
       <div className="flex items-start gap-4">
@@ -524,86 +693,109 @@ function AiSettings() {
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="font-semibold text-[16px]">Inteligência Artificial (NVIDIA)</div>
+            <div className="font-semibold text-[16px]">Inteligência Artificial</div>
             {info.data?.hasKey ? (
               <Badge tone="success" icon={CircleCheck}>
-                Conectada {info.data.source === "arquivo" ? "(arquivo config.json)" : info.data.source === "ambiente" ? "(variável de ambiente)" : ""}
+                Conectada
               </Badge>
             ) : (
               <Badge tone="warning">Não configurada</Badge>
             )}
           </div>
           <p className="text-[13.5px] text-muted mt-1">
-            Só você, como Dono, vê esta seção. A chave fica guardada criptografada neste aparelho e vale para todas as contas do app. Os outros usuários só veem o Assistente funcionando.
+            Só você, como Dono, vê esta seção. As chaves ficam guardadas criptografadas e valem para todas as contas do app. Os outros usuários só veem o Assistente funcionando.
           </p>
+          {info.data?.hasKey && info.data.modelLabel && <p className="text-[12.5px] text-muted mt-1">Responde agora: {info.data.modelLabel}</p>}
         </div>
       </div>
       <div className="mt-5 space-y-4">
-        <Field label="Chave da API" hint={info.data?.keyPreview ? `Chave atual: ${info.data.keyPreview}` : "Começa com nvapi-"}>
-          <PasswordInput icon={KeyRound} value={key} onChange={(e) => setKey(e.target.value)} placeholder={info.data?.hasKey ? "Deixe em branco para manter a chave atual" : "nvapi-..."} />
-        </Field>
+        <GroqSettings info={info.data} groqModels={catalog.data?.groq} onChange={reloadAll} />
 
-        <div>
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="label !mb-0">Modelo</div>
-            <Button size="sm" variant="ghost" icon={RefreshCw} loading={refreshing} disabled={!info.data?.hasKey} onClick={() => void refresh()}>
-              Atualizar lista
-            </Button>
+        <div className="rounded-2xl border border-line/10 p-4 space-y-4">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">NVIDIA</span>
+              {info.data?.hasNvidia ? (
+                <Badge tone="success" icon={CircleCheck}>
+                  Conectada {info.data.source === "arquivo" ? "(arquivo config.json)" : info.data.source === "ambiente" ? "(variável de ambiente)" : ""}
+                </Badge>
+              ) : (
+                <Badge>{info.data?.hasGroq ? "Opcional" : "Não configurada"}</Badge>
+              )}
+            </div>
+            <div className="text-[13px] text-muted mt-0.5">Muitos modelos grátis, porém mais lentos.{info.data?.hasGroq ? " Serve de reserva para a Groq." : ""}</div>
           </div>
-          <div className="space-y-2">
-            {row(
-              "auto",
-              "Automático",
-              best ? `Usa sempre o melhor modelo disponível para o Investa. Agora: ${best.label} (${best.publisher}).` : "Usa sempre o melhor modelo disponível para o Investa.",
-              <Badge tone="primary">Recomendado</Badge>
-            )}
-            {visible.map((m) =>
-              row(
-                m.id,
-                m.label,
-                `${m.publisher} · ${m.id}`,
-                <>
-                  {m.id === best?.id && <Badge tone="success">Melhor agora</Badge>}
-                  {m.tags.map((t) => (
-                    <Badge key={t}>{t}</Badge>
-                  ))}
-                </>
-              )
-            )}
-          </div>
-          {models.length > 10 && (
-            <button type="button" className="text-[13px] text-primary font-medium mt-2" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? "Mostrar só os melhores" : `Mostrar todos os ${models.length} modelos`}
-            </button>
-          )}
-          <div className="text-[12px] text-muted mt-2">
-            {catalog.data?.updatedAt
-              ? `Lista da sua conta NVIDIA, atualizada ${relativeTime(catalog.data.updatedAt)}. O app confere de novo todo dia.`
-              : info.data?.hasKey
-                ? "A lista aparece depois da primeira conexão."
-                : "Coloque a chave para ver os modelos disponíveis na sua conta."}{" "}
-            Se o modelo escolhido sair do ar, o app troca sozinho pelo melhor disponível e avisa você.
-          </div>
-        </div>
+          <Field label="Chave da API" hint={info.data?.keyPreview ? `Chave atual: ${info.data.keyPreview}` : "Começa com nvapi-"}>
+            <PasswordInput icon={KeyRound} value={key} onChange={(e) => setKey(e.target.value)} placeholder={info.data?.hasNvidia ? "Deixe em branco para manter a chave atual" : "nvapi-..."} />
+          </Field>
 
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void save()} loading={saving}>
-            Salvar
-          </Button>
-          <Button variant="secondary" icon={Sparkles} loading={testing} disabled={!info.data?.hasKey && !key.trim()} onClick={() => void test()}>
-            Testar conexão
-          </Button>
-          <Button variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://build.nvidia.com/models")}>
-            Ver modelos na NVIDIA
-          </Button>
-          <Button variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://build.nvidia.com/settings/api-keys")}>
-            Gerar chave
-          </Button>
-          {info.data?.source === "app" && (
-            <Button variant="ghost" className="text-danger" onClick={() => setConfirmRemove(true)}>
-              Remover chave
-            </Button>
+          {info.data?.hasNvidia && (
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="label !mb-0">Modelo da NVIDIA</div>
+                <Button size="sm" variant="ghost" icon={RefreshCw} loading={refreshing} onClick={() => void refresh()}>
+                  Atualizar lista
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <ChoiceRow
+                  selected={selected === "auto"}
+                  saving={pick === "auto"}
+                  onClick={() => void chooseModel("auto")}
+                  title="Automático"
+                  sub={best ? `Usa o mais rápido e bom disponível. Agora: ${best.label} (${best.publisher}).` : "Usa o mais rápido e bom disponível para o Investa."}
+                  badge={<Badge tone="primary">Recomendado</Badge>}
+                />
+                {visible.map((m) => (
+                  <ChoiceRow
+                    key={m.id}
+                    selected={selected === m.id}
+                    saving={pick === m.id}
+                    onClick={() => void chooseModel(m.id)}
+                    title={m.label}
+                    sub={`${m.publisher} · ${m.id}`}
+                    badge={
+                      <>
+                        {m.id === best?.id && <Badge tone="success">Melhor agora</Badge>}
+                        {m.tags.map((t) => (
+                          <Badge key={t}>{t}</Badge>
+                        ))}
+                      </>
+                    }
+                  />
+                ))}
+              </div>
+              {models.length > 10 && (
+                <button type="button" className="text-[13px] text-primary font-medium mt-2" onClick={() => setShowAll((v) => !v)}>
+                  {showAll ? "Mostrar só os melhores" : `Mostrar todos os ${models.length} modelos`}
+                </button>
+              )}
+              <div className="text-[12px] text-muted mt-2">
+                {catalog.data?.updatedAt ? `Lista da sua conta NVIDIA, atualizada ${relativeTime(catalog.data.updatedAt)}. O app confere de novo todo dia.` : "A lista aparece depois da primeira conexão."} A escolha
+                fica salva: se o modelo escolhido falhar, outro responde só naquela vez.
+              </div>
+            </div>
           )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void saveKey()} loading={saving} disabled={!key.trim()}>
+              Salvar chave
+            </Button>
+            <Button variant="secondary" icon={Sparkles} loading={testing} disabled={!info.data?.hasNvidia && !key.trim()} onClick={() => void test()}>
+              Testar conexão
+            </Button>
+            <Button variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://build.nvidia.com/models")}>
+              Ver modelos na NVIDIA
+            </Button>
+            <Button variant="ghost" icon={ExternalLink} onClick={() => void api.openExternal("https://build.nvidia.com/settings/api-keys")}>
+              Gerar chave
+            </Button>
+            {info.data?.source === "app" && (
+              <Button variant="ghost" className="text-danger" onClick={() => setConfirmRemove(true)}>
+                Remover chave
+              </Button>
+            )}
+          </div>
         </div>
       </div>
       <SearchSettings info={info.data} onChange={() => info.reload()} />
@@ -615,8 +807,8 @@ function AiSettings() {
           setConfirmRemove(false);
           info.reload();
         }}
-        title="Remover chave da IA?"
-        message="O Assistente deixará de funcionar até uma nova chave ser configurada."
+        title="Remover a chave da NVIDIA?"
+        message={info.data?.hasGroq ? "O Assistente continua com a Groq, mas sem a reserva da NVIDIA." : "O Assistente deixará de funcionar até uma nova chave ser configurada."}
         confirmLabel="Remover"
         danger
       />

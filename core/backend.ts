@@ -1,13 +1,13 @@
 // Todos os canais que a interface chama (window.investa.invoke). O Electron e
 // o app do celular criam este backend com o adaptador da sua plataforma.
-import type { AiChatRequest, AiMode, WealthAnswers, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
+import type { AiChatRequest, AiEvent, AiMode, WealthAnswers, AppNotification, ApiResult, ChartRange, DealCheck, Holding, LeaderboardEntry, Role, UserDataKey, UserDataMap, UserStatus } from "@shared/types";
 import { USER_DATA_KEYS } from "@shared/types";
 import { pendingFor, currentYm, monthBudget, monthsUntil, parsePlanSteps, ratesFromIndicators, summarizeMonth, wealthProjection, wealthRate } from "@shared/finance";
 import { modeInfo } from "@shared/ai";
 import type { Platform } from "./platform";
 import { Store } from "./store";
 import { AppError, AuthService, type NewUserInput } from "./auth";
-import { AiService } from "./ai";
+import { AiService, CHAT_MAX_TOKENS, targetLabel, type AiConfigPatch } from "./ai";
 import { AlertEngine } from "./engine";
 import { getChart, getQuotes, search } from "./yahoo";
 import { getCopom, getIndicators, getIpcaHistory, getSelicHistory } from "./bcb";
@@ -16,11 +16,11 @@ import { setCacheFiles } from "./http";
 import { getNews } from "./news";
 import { getBanks } from "./banks";
 import { portfolioHistory } from "./portfolio";
-import { buildAiContext, systemPrompt } from "./context";
+import { buildAiContext, LANGUAGE_REMINDER, systemPrompt } from "./context";
 import { buildDocHtml, buildDocPdf, buildExcel, buildPdf, buildReportHtml, type ReportInput } from "./reports";
 import { checkDeal, dealToText } from "./deals";
-import { modelLabel } from "./models";
 import { CloudService } from "./cloud";
+import { clearItems, INBOX_KEY, markRead, removeItem, type Inbox } from "./inbox";
 import { BOOK_PRINCIPLES, resultsToContext, webSearch, type SearchResult } from "./search";
 
 const VALID_RANGES: ChartRange[] = ["1D", "5D", "1M", "6M", "1A", "5A", "MAX"];
@@ -30,6 +30,20 @@ const SYNC_EVERY = 45_000;
 
 /** Mensagem que quem não é Dono vê quando a IA falha. */
 const AI_UNAVAILABLE = "O Assistente não está disponível agora. Tente de novo em alguns minutos.";
+
+/**
+ * Só as últimas mensagens vão para a IA, e as respostas antigas resumidas:
+ * menos texto para ler, resposta mais rápida. A última resposta vai inteira
+ * (é a que a pessoa costuma comentar).
+ */
+function trimHistory(list: AiChatRequest["messages"]): { role: "user" | "assistant"; content: string }[] {
+  const valid = (list ?? []).filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim()).slice(-8);
+  return valid.map((m, i) => {
+    const recent = i >= valid.length - 2;
+    const max = m.role === "user" ? 6000 : recent ? 6000 : 1200;
+    return { role: m.role, content: m.content.length > max ? `${m.content.slice(0, max)}…` : m.content };
+  });
+}
 
 export function errorMessage(err: unknown): { code: string; message: string } {
   if (err instanceof AppError) return { code: err.code, message: err.message };
@@ -69,6 +83,11 @@ export class Backend {
         const u = this.store.findUser(userId);
         this.platform.emit("data:changed", u ? this.store.toPublic(u) : null);
       }
+    };
+    // Avisos de outra conta deste aparelho (ex.: aviso aos Donos) sobem quando ela entrar.
+    this.engine.onInboxChanged = (userId) => {
+      if (userId === this.currentUserId) this.cloud.schedulePush(userId, [INBOX_KEY]);
+      else if (this.cloud.enabled) this.cloud.markDirty(userId, [INBOX_KEY]);
     };
     this.ai.onModelChange = (from, to, reason) => this.notifyOwners(from, to, reason);
     this.register();
@@ -119,40 +138,31 @@ export class Backend {
   }
 
   /**
-   * A chave da IA fica guardada na nuvem: se este aparelho perdeu a dele (app
-   * reinstalado, atualização que trocou a criptografia), busca de novo; se a
-   * nuvem ainda não tem (chave colocada antes da nuvem), o Dono envia a dele.
+   * A configuração da IA fica guardada na nuvem: se este aparelho perdeu a
+   * chave (app reinstalado, atualização que trocou a criptografia), busca de
+   * novo; se a nuvem ainda não tem, o Dono envia a dele. A versão mais nova
+   * vence, para uma cópia antiga nunca desfazer a escolha do Dono.
    */
   private async syncAiKey(userId: string): Promise<void> {
-    // Mudança do Dono feita sem internet: envia antes de buscar, para não ser desfeita.
     const pending = this.cloud.aiPending;
     if (pending && this.isOwner(userId)) {
-      await this.cloud.pushAi(userId, pending);
-      this.cloud.aiPending = undefined;
+      // Mudança do Dono feita sem internet: sobe, a não ser que outro aparelho tenha mudado depois.
+      const cloud = await this.cloud.pullAi(userId, true);
+      if (this.cloud.aiPending !== pending) return;
+      if (cloud?.changedAt && (!pending.changedAt || cloud.changedAt > pending.changedAt)) this.ai.applyCloud(cloud);
+      else await this.cloud.pushAi(userId, pending);
+      if (this.cloud.aiPending === pending) this.cloud.aiPending = undefined;
       return;
     }
-    const local = this.ai.resolve();
-    const ai = await this.cloud.pullAi(userId, !local.key);
-    if (ai?.apiKey) {
-      this.applyCloudAi(ai);
-      return;
-    }
-    if (ai) this.applyCloudAi(ai);
-    const r = this.ai.resolve();
-    const cloudHasKey = !!ai?.apiKey;
-    if (!cloudHasKey && r.key && r.source === "app" && this.isOwner(userId) && ai !== null) {
-      await this.cloud.pushAi(userId, { apiKey: r.key, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "", searchKey: this.ai.searchKey() });
-    }
-  }
-
-  private applyCloudAi(ai: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }): void {
-    const r = this.ai.resolve();
-    const patch: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null } = {};
-    if (ai.searchKey !== undefined && (ai.searchKey || null) !== this.ai.searchKey()) patch.searchKey = ai.searchKey || null;
-    if (ai.apiKey !== undefined && (ai.apiKey || null) !== (r.source === "app" ? r.key : null)) patch.apiKey = ai.apiKey || null;
-    if (ai.model !== undefined && ai.model !== r.choice) patch.model = ai.model;
-    if (ai.baseUrl !== undefined && (ai.baseUrl || undefined) !== (this.store.app.ai?.baseUrl || undefined)) patch.baseUrl = ai.baseUrl ?? "";
-    if (Object.keys(patch).length) this.ai.setConfig(patch);
+    const version = this.ai.version;
+    const local = this.ai.info(true);
+    const ai = await this.cloud.pullAi(userId, !local.hasKey);
+    // O Dono mudou algo aqui enquanto a busca acontecia: vale a mudança local.
+    if (this.ai.version !== version || this.cloud.aiPending) return;
+    if (ai) this.ai.applyCloud(ai);
+    // A nuvem ainda não tem a chave (colocada antes da nuvem ou por uma versão antiga do app): o Dono envia a dele.
+    const mine = this.ai.cloudConfig();
+    if (ai !== null && this.isOwner(userId) && ((mine.apiKey && !ai.apiKey) || (mine.groqKey && !ai.groqKey))) await this.cloud.pushAi(userId, mine);
   }
 
   private endSession(): void {
@@ -236,8 +246,8 @@ export class Backend {
         {
           type: "sistema",
           tone: "info",
-          title: "O Assistente trocou de modelo de IA",
-          message: `Passou de ${modelLabel(from)} para ${modelLabel(to)} porque ${reason}. Você pode escolher outro em Configurações → Inteligência Artificial.`,
+          title: "O modelo escolhido para a IA saiu do ar",
+          message: `${targetLabel(from)}: ${reason}. Enquanto isso, o Assistente usa ${targetLabel(to)}. Sua escolha continua salva; dá para trocar em Configurações → Inteligência Artificial.`,
           link: "/configuracoes",
         },
         `modelo-${from}-${to}`
@@ -291,7 +301,7 @@ export class Backend {
       mode,
     });
     const extra = attachment ? `\n\n${attachment.slice(0, 12000)}` : "";
-    return [{ role: "system" as const, content: `${systemPrompt(mode)}\n\n=== DADOS EM TEMPO REAL ===\n${context}${extra}` }, ...messages];
+    return [{ role: "system" as const, content: `${systemPrompt(mode)}\n\n=== DADOS EM TEMPO REAL ===\n${context}${extra}\n\n${LANGUAGE_REMINDER}` }, ...messages];
   }
 
   private register(): void {
@@ -335,6 +345,9 @@ export class Backend {
       if (cloudUser) {
         this.engine.dataReady = true;
         void this.syncAiKey(user.id).catch(() => undefined);
+      } else if (this.cloud.enabled) {
+        // Entrou sem internet: tenta sincronizar já; se falhar, o motor segue com o que há aqui.
+        void this.sync();
       }
       return user;
     });
@@ -414,25 +427,23 @@ export class Backend {
     });
 
     // ---- notificações ----
+    // Lidas e apagadas valem para todos os aparelhos da conta.
+    const editInbox = (fn: (x: Inbox) => Inbox) => {
+      const list = this.store.updateInbox(this.uid(), fn);
+      this.cloud.schedulePush(this.uid(), [INBOX_KEY]);
+      return list;
+    };
     this.on("notifications:list", () => this.store.getNotifications(this.uid()));
-    this.on("notifications:markRead", (a: { id?: string }) => {
-      const list = this.store.getNotifications(this.uid()).map((n) => (!a?.id || n.id === a.id ? { ...n, read: true } : n));
-      this.store.setNotifications(this.uid(), list);
-      return list;
-    });
-    this.on("notifications:remove", (a: { id: string }) => {
-      const list = this.store.getNotifications(this.uid()).filter((n) => n.id !== a.id);
-      this.store.setNotifications(this.uid(), list);
-      return list;
-    });
-    this.on("notifications:clear", () => {
-      this.store.setNotifications(this.uid(), []);
-      return [];
-    });
+    this.on("notifications:markRead", (a: { id?: string }) => editInbox((x) => markRead(x, typeof a?.id === "string" ? a.id : undefined)));
+    this.on("notifications:remove", (a: { id: string }) => editInbox((x) => removeItem(x, String(a?.id ?? ""))));
+    this.on("notifications:clear", () => editInbox((x) => clearItems(x)));
     this.on("alerts:state", () => this.store.engine(this.uid()).alertState);
     this.on("alerts:rearm", (a: { id: string }) => {
-      delete this.store.engine(this.uid()).alertState[a.id];
+      // Rearme marcado com horário (e não apagado) para valer também nos outros aparelhos.
+      const st = this.store.engine(this.uid()).alertState;
+      if (st[a.id]) st[a.id] = { fired: false, changedAt: new Date().toISOString() };
       this.store.save();
+      this.cloud.schedulePush(this.uid(), [INBOX_KEY]);
       this.engine.runNow();
       return true;
     });
@@ -492,14 +503,13 @@ export class Backend {
 
     // ---- inteligência artificial ----
     this.on("ai:info", () => this.ai.info(this.isOwner()));
-    this.on("ai:setConfig", (a: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }) => {
+    this.on("ai:setConfig", (a: AiConfigPatch) => {
       this.requireOwner();
       this.ai.setConfig(a);
       if (this.cloud.enabled) {
-        // A chave vale para todas as contas, em qualquer aparelho. Se estiver sem
+        // A configuração vale para todas as contas, em qualquer aparelho. Se estiver sem
         // internet, fica pendente e sobe na próxima sincronização.
-        const r = this.ai.resolve();
-        const payload = { apiKey: r.source === "app" ? r.key : null, model: r.choice, baseUrl: this.store.app.ai?.baseUrl ?? "", searchKey: this.ai.searchKey() };
+        const payload = this.ai.cloudConfig();
         this.cloud.aiPending = payload;
         void this.cloud
           .pushAi(this.uid(), payload)
@@ -524,28 +534,30 @@ export class Backend {
       this.requireOwner();
       return this.ai.catalog(!!a.force);
     });
-    this.on("ai:test", () => {
+    this.on("ai:test", (a: { provider?: "groq" | "nvidia"; key?: string } | undefined) => {
       this.requireOwner();
-      return this.ai.test();
+      const provider = a?.provider === "groq" || a?.provider === "nvidia" ? a.provider : undefined;
+      return this.ai.test(provider, typeof a?.key === "string" && a.key.trim() ? a.key : undefined);
     });
     this.on("ai:chat", (a: AiChatRequest) => {
       const userId = this.uid();
+      const owner = this.isOwner();
       const mode = MODES.includes(a.mode as AiMode) ? (a.mode as AiMode) : "mercado";
-      const messages = (a.messages ?? [])
-        .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
-        .slice(-12)
-        .map((m) => ({ role: m.role, content: m.content.slice(0, 8000) }));
+      const messages = trimHistory(a.messages);
       const controller = new AbortController();
       this.aiControllers.set(a.requestId, controller);
+      const emit = (type: AiEvent["type"], data?: string) => {
+        if (!controller.signal.aborted) p.emit("ai:event", { requestId: a.requestId, type, data });
+      };
       void (async () => {
         try {
           if (!this.ai.info(true).hasKey) {
-            throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. Coloque a chave da NVIDIA em Configurações → Inteligência Artificial.");
+            throw new AppError("AI_NO_KEY", "A IA ainda não foi configurada. Coloque a chave da Groq ou da NVIDIA em Configurações → Inteligência Artificial.");
           }
           let attachment = a.attachment;
           const searchKey = a.web ? this.ai.searchKey() : null;
           if (searchKey) {
-            p.emit("ai:event", { requestId: a.requestId, type: "context", data: "Pesquisando na internet…" });
+            emit("context", "Pesquisando na internet…");
             const q = messages.filter((m) => m.role === "user").pop()?.content ?? "";
             const results = await webSearch(searchKey, q.slice(0, 300), 5).catch(() => [] as SearchResult[]);
             const ctx = resultsToContext(results);
@@ -553,11 +565,14 @@ export class Backend {
           }
           const full = await this.aiMessages(userId, mode, messages, attachment);
           if (controller.signal.aborted) return;
-          p.emit("ai:event", { requestId: a.requestId, type: "context", data: modeInfo(mode).label });
-          await this.ai.stream(full, (delta) => p.emit("ai:event", { requestId: a.requestId, type: "chunk", data: delta }), controller.signal);
-          p.emit("ai:event", { requestId: a.requestId, type: "done" });
+          emit("context", modeInfo(mode).label);
+          await this.ai.stream(full, (delta) => emit("chunk", delta), controller.signal, CHAT_MAX_TOKENS, {
+            onModel: owner ? (label) => emit("model", label) : undefined,
+            onReplace: (text) => emit("replace", text),
+          });
+          emit("done");
         } catch (err) {
-          p.emit("ai:event", { requestId: a.requestId, type: "error", data: this.aiError(err) });
+          emit("error", this.aiError(err));
         } finally {
           this.aiControllers.delete(a.requestId);
         }

@@ -1,4 +1,4 @@
-import type { AppNotification, Holding, PriceAlert, Quote, UserSettings } from "@shared/types";
+import type { AlertRuntimeState, AppNotification, Holding, PriceAlert, Quote, UserSettings } from "@shared/types";
 import { displaySymbol } from "@shared/catalog";
 import { DAILY_TIPS } from "@shared/tips";
 import { billDueDate, currentYm, monthBudget, pendingFor, summarizeMonth, weekSummary, ymLabel } from "@shared/finance";
@@ -7,8 +7,13 @@ import { getQuotes } from "./yahoo";
 import { getCopom, getIndicators } from "./bcb";
 import { nowInSaoPaulo, todayIsoSaoPaulo } from "./http";
 import { fxFor } from "./portfolio";
+import { identity, pruneInbox, sameInbox } from "./inbox";
 
-type NewNotification = Omit<AppNotification, "id" | "createdAt" | "read">;
+type NewNotification = Omit<AppNotification, "id" | "key" | "createdAt" | "read">;
+
+const DAY = 86_400_000;
+/** Lembrete atrasado mais que isso (app fechado, aparelho novo) já não é avisado. */
+const REMINDER_LATE_MAX = 7 * DAY;
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const pct = (v: number, d = 2) => `${v >= 0 ? "+" : ""}${v.toFixed(d).replace(".", ",")}%`;
@@ -30,8 +35,12 @@ export class AlertEngine {
 
   /** Avisado quando o motor muda dados do usuário (para sincronizar e atualizar a tela). */
   onDataChanged?: (userId: string, keys: string[]) => void;
-  /** Enquanto falso, o motor não mexe em dados (espera a primeira sincronização com a nuvem). */
+  /** Avisado quando mudam os avisos ou o estado dos alertas (para sincronizar com os outros aparelhos). */
+  onInboxChanged?: (userId: string) => void;
+  /** Enquanto falso, o motor não avisa nem mexe em dados (espera a primeira sincronização com a nuvem). */
   dataReady = true;
+  /** Conta cujo registro de avisos está sendo preenchido em silêncio. */
+  private seeding: string | null = null;
 
   constructor(private store: Store, private emit: (userId: string, n: AppNotification) => void) {}
 
@@ -51,7 +60,7 @@ export class AlertEngine {
   runNow(): void {
     // As checagens locais (lembretes, faturas, contas, caixinhas) rodam na hora,
     // mesmo se a rodada anterior ainda estiver esperando cotações.
-    if (this.userId) this.localChecks(this.userId);
+    if (this.userId && this.dataReady) this.localChecks(this.userId);
     void this.tick();
   }
 
@@ -62,40 +71,67 @@ export class AlertEngine {
     this.boxes(uid);
   }
 
-  /** Cria uma notificação (uma vez por chave, quando houver chave). */
+  /**
+   * Cria uma notificação uma única vez por chave. A chave identifica a
+   * ocorrência (ex.: conta X vencendo no mês Y) e vai para o registro da conta,
+   * que é sincronizado: o mesmo aviso não volta depois de sair e entrar, ao
+   * reabrir o app nem em outro aparelho.
+   */
   push(userId: string, n: NewNotification, key?: string): boolean {
+    const k = key ?? `${n.type}-${n.title}-${todayIsoSaoPaulo()}`;
     const st = this.store.engine(userId);
-    if (key && st.keys[key]) return false;
-    if (key) st.keys[key] = new Date().toISOString();
-    const notification: AppNotification = { ...n, id: globalThis.crypto.randomUUID(), createdAt: new Date().toISOString(), read: false };
-    this.store.setNotifications(userId, [notification, ...this.store.getNotifications(userId)]);
+    if (st.keys[k]) return false;
+    const now = new Date().toISOString();
+    st.keys[k] = now;
+    if (this.seeding === userId) {
+      this.store.save();
+      this.onInboxChanged?.(userId);
+      return false;
+    }
+    const notification: AppNotification = { ...n, id: globalThis.crypto.randomUUID(), key: k, createdAt: now, read: false };
+    this.store.setNotifications(userId, [notification, ...this.store.getNotifications(userId).filter((x) => identity(x) !== k)]);
     this.emit(userId, notification);
+    this.onInboxChanged?.(userId);
     return true;
   }
 
-  /** Dispara apenas quando a condição passa de falsa para verdadeira (com rearme). */
-  private edge(userId: string, id: string, condition: boolean, rearm: boolean): boolean {
-    const st = this.store.engine(userId).alertState;
-    const prev = st[id];
+  /**
+   * Dispara apenas quando a condição passa de falsa para verdadeira (com rearme).
+   * Devolve a chave da ocorrência: o id do alerta mais o momento do último
+   * rearme, igual em todos os aparelhos depois de sincronizar.
+   */
+  private edge(userId: string, id: string, condition: boolean, rearm: boolean): string | null {
+    const prev = this.store.engine(userId).alertState[id];
+    const now = new Date().toISOString();
     if (condition && !prev?.fired) {
-      st[id] = { fired: true, firedAt: new Date().toISOString() };
-      this.store.save();
-      return true;
+      this.setAlertState(userId, id, { fired: true, firedAt: now, changedAt: now });
+      return `${id}@${prev?.changedAt ?? "0"}`;
     }
-    if (!condition && prev?.fired && rearm) {
-      st[id] = { fired: false };
-      this.store.save();
-    }
-    return false;
+    if (!condition && prev?.fired && rearm) this.setAlertState(userId, id, { fired: false, changedAt: now });
+    return null;
+  }
+
+  private setAlertState(userId: string, id: string, state: AlertRuntimeState): void {
+    this.store.engine(userId).alertState[id] = state;
+    this.store.save();
+    this.onInboxChanged?.(userId);
   }
 
   async tick(): Promise<void> {
     const uid = this.userId;
-    if (!uid || this.running) return;
+    if (!uid || this.running || !this.dataReady) return;
     this.running = true;
     try {
       const user = this.store.findUser(uid);
       if (!user) return;
+      const st = this.store.engine(uid);
+      if (!st.seeded) {
+        // Primeira vez desta conta sem registro de avisos (nem aqui, nem na nuvem):
+        // numa conta já em uso, o que está acontecendo agora é antigo e fica
+        // registrado sem avisar. Conta nova recebe tudo, inclusive as boas-vindas.
+        const isNew = !this.store.getData(uid, "profile").onboarded || Date.now() - Date.parse(user.createdAt) < 2 * DAY;
+        if (!isNew && !st.keys.welcome) this.seeding = uid;
+      }
       const settings = this.store.getData(uid, "settings");
       const alerts = this.store.getData(uid, "alerts");
       const portfolio = this.store.getData(uid, "portfolio");
@@ -130,6 +166,13 @@ export class AlertEngine {
       if (settings.weeklySummary !== false) this.weekly(uid);
       this.prune(uid);
     } finally {
+      const st = this.store.engine(uid);
+      if (!st.seeded && this.store.findUser(uid)) {
+        st.seeded = true;
+        this.store.save();
+        this.onInboxChanged?.(uid);
+      }
+      if (this.seeding === uid) this.seeding = null;
       this.running = false;
     }
   }
@@ -253,9 +296,19 @@ export class AlertEngine {
     for (const a of alerts) {
       if (a.kind !== "lembrete" || !a.active || !a.remindAt) continue;
       const at = Date.parse(a.remindAt);
-      if (Number.isFinite(at) && at <= now) {
-        this.push(uid, { type: "alerta", tone: "info", title: a.title || "Lembrete", message: a.message || "Você pediu para ser lembrado agora." }, `rem-${a.id}-${a.remindAt}`);
+      if (!Number.isFinite(at)) continue;
+      const st = this.store.engine(uid);
+      const fired = st.alertState[a.id]?.fired;
+      if (at > now) {
+        // Horário trocado para o futuro: volta a esperar.
+        if (fired) this.setAlertState(uid, a.id, { fired: false, changedAt: new Date().toISOString() });
+        continue;
       }
+      const key = `rem-${a.id}-${a.remindAt}`;
+      if (now - at <= REMINDER_LATE_MAX) {
+        this.push(uid, { type: "alerta", tone: "info", title: a.title || "Lembrete", message: a.message || "Você pediu para ser lembrado agora." }, key);
+      }
+      if (!fired) this.setAlertState(uid, a.id, { fired: true, firedAt: st.keys[key] ?? a.remindAt, changedAt: new Date().toISOString() });
     }
   }
 
@@ -291,7 +344,8 @@ export class AlertEngine {
         details = `Preço ${priceLabel(q)} contra média de 50 dias de ${valueLabel(q, q.fiftyDayAverage)}. Pode ser oportunidade — confira os fundamentos antes.`;
         tone = "info";
       }
-      if (this.edge(uid, a.id, cond, a.repeat)) {
+      const occurrence = this.edge(uid, a.id, cond, a.repeat);
+      if (occurrence) {
         this.push(uid, {
           type: "alerta",
           tone,
@@ -299,7 +353,7 @@ export class AlertEngine {
           title: a.title?.trim() || title,
           message: a.message?.trim() ? `${a.message.trim()} — ${details}` : details,
           link: `/mercado/${encodeURIComponent(a.symbol)}`,
-        });
+        }, `alerta-${occurrence}`);
       }
     }
   }
@@ -313,49 +367,33 @@ export class AlertEngine {
       const ret = ((q.price - h.avgPrice) / h.avgPrice) * 100;
       const profit = (q.price - h.avgPrice) * h.quantity * fx;
       const link = `/mercado/${encodeURIComponent(h.symbol!)}`;
+      const fire = (id: string, condition: boolean, rearm: boolean, n: Pick<AppNotification, "tone" | "title" | "message">) => {
+        const occurrence = this.edge(uid, id, condition, rearm);
+        if (occurrence) this.push(uid, { type: "carteira", symbol: h.symbol, link, ...n }, `carteira-${occurrence}`);
+      };
 
-      if (this.edge(uid, `gain:${h.id}`, ret >= s.gainThreshold, ret < s.gainThreshold - 2)) {
-        this.push(uid, {
-          type: "carteira",
-          tone: "positive",
-          symbol: h.symbol,
-          link,
-          title: `${name} está dando bom: ${pct(ret, 1)}`,
-          message: `Sua posição valorizou ${pct(ret, 1)} sobre o preço médio de ${valueLabel(q, h.avgPrice)} (lucro de ${brl(profit)}). Avalie se mantém, conforme seu objetivo, ou se realiza parte do lucro.`,
-        });
-      }
-      if (this.edge(uid, `loss:${h.id}`, ret <= -s.lossThreshold, ret > -s.lossThreshold + 2)) {
-        this.push(uid, {
-          type: "carteira",
-          tone: "negative",
-          symbol: h.symbol,
-          link,
-          title: `${name} está ${pct(ret, 1)} abaixo do seu preço médio`,
-          message: `Prejuízo momentâneo de ${brl(profit)}. Quedas fazem parte; verifique se algo mudou nos fundamentos antes de decidir vender ou aproveitar para comprar mais barato.`,
-        });
-      }
+      fire(`gain:${h.id}`, ret >= s.gainThreshold, ret < s.gainThreshold - 2, {
+        tone: "positive",
+        title: `${name} está dando bom: ${pct(ret, 1)}`,
+        message: `Sua posição valorizou ${pct(ret, 1)} sobre o preço médio de ${valueLabel(q, h.avgPrice)} (lucro de ${brl(profit)}). Avalie se mantém, conforme seu objetivo, ou se realiza parte do lucro.`,
+      });
+      fire(`loss:${h.id}`, ret <= -s.lossThreshold, ret > -s.lossThreshold + 2, {
+        tone: "negative",
+        title: `${name} está ${pct(ret, 1)} abaixo do seu preço médio`,
+        message: `Prejuízo momentâneo de ${brl(profit)}. Quedas fazem parte; verifique se algo mudou nos fundamentos antes de decidir vender ou aproveitar para comprar mais barato.`,
+      });
       if (q.fiftyDayAverage) {
         const diff = ((q.price - q.fiftyDayAverage) / q.fiftyDayAverage) * 100;
-        if (this.edge(uid, `low:${h.id}`, diff <= -s.deviationThreshold, diff > -s.deviationThreshold + 1.5)) {
-          this.push(uid, {
-            type: "carteira",
-            tone: "info",
-            symbol: h.symbol,
-            link,
-            title: `${name} está mais barata que o normal`,
-            message: `Está ${n2(Math.abs(diff))}% abaixo da média dos últimos 50 dias (${priceLabel(q)} contra ${valueLabel(q, q.fiftyDayAverage)}). Se os fundamentos continuam bons, pode ser um bom momento para aportar.`,
-          });
-        }
-        if (this.edge(uid, `high:${h.id}`, diff >= s.deviationThreshold, diff < s.deviationThreshold - 1.5)) {
-          this.push(uid, {
-            type: "carteira",
-            tone: "positive",
-            symbol: h.symbol,
-            link,
-            title: `${name} está acima do normal`,
-            message: `Está ${n2(diff)}% acima da média de 50 dias (${priceLabel(q)}). Sua posição está ${pct(ret, 1)} no total. Evite comprar no impulso em momentos de euforia.`,
-          });
-        }
+        fire(`low:${h.id}`, diff <= -s.deviationThreshold, diff > -s.deviationThreshold + 1.5, {
+          tone: "info",
+          title: `${name} está mais barata que o normal`,
+          message: `Está ${n2(Math.abs(diff))}% abaixo da média dos últimos 50 dias (${priceLabel(q)} contra ${valueLabel(q, q.fiftyDayAverage)}). Se os fundamentos continuam bons, pode ser um bom momento para aportar.`,
+        });
+        fire(`high:${h.id}`, diff >= s.deviationThreshold, diff < s.deviationThreshold - 1.5, {
+          tone: "positive",
+          title: `${name} está acima do normal`,
+          message: `Está ${n2(diff)}% acima da média de 50 dias (${priceLabel(q)}). Sua posição está ${pct(ret, 1)} no total. Evite comprar no impulso em momentos de euforia.`,
+        });
       }
     }
   }
@@ -473,26 +511,24 @@ export class AlertEngine {
     this.push(uid, { type: "dica", tone: "info", title: `Dica do dia: ${tip.title}`, message: tip.message }, `tip-${todayIsoSaoPaulo()}`);
   }
 
+  /**
+   * Limpa o registro com mais de 90 dias. Nenhum aviso volta por isso: cada
+   * checagem só vale por pouco tempo (o dia, o mês, a semana do Copom, os dois
+   * meses do IPCA, até 7 dias de atraso de um lembrete), e as boas-vindas
+   * nunca saem do registro.
+   */
   private prune(uid: string): void {
-    const st = this.store.engine(uid);
-    const limit = Date.now() - 120 * 86_400_000;
-    let changed = false;
-    for (const [k, v] of Object.entries(st.keys)) {
-      if (k !== "welcome" && Date.parse(v) < limit) {
-        delete st.keys[k];
-        changed = true;
-      }
-    }
+    const before = this.store.inbox(uid);
+    const next = pruneInbox(before);
     const alertIds = new Set(this.store.getData(uid, "alerts").map((a) => a.id));
     const holdingIds = new Set(this.store.getData(uid, "portfolio").map((h) => h.id));
-    for (const k of Object.keys(st.alertState)) {
+    const alertState = { ...next.alertState };
+    for (const k of Object.keys(alertState)) {
       const [prefix, id] = k.includes(":") ? k.split(":") : ["", k];
       const keep = prefix ? holdingIds.has(id) : alertIds.has(k);
-      if (!keep) {
-        delete st.alertState[k];
-        changed = true;
-      }
+      if (!keep) delete alertState[k];
     }
-    if (changed) this.store.save();
+    const pruned = { ...next, alertState };
+    if (!sameInbox(pruned, before)) this.store.setInbox(uid, pruned);
   }
 }

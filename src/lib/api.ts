@@ -6,6 +6,7 @@ import type {
   AiCatalog,
   AiConfigInfo,
   AiMode,
+  AiProvider,
   DealCheck,
   AiEvent,
   AlertRuntimeState,
@@ -124,9 +125,18 @@ export const api = {
 
   ai: {
     info: () => call<AiConfigInfo>("ai:info"),
-    setConfig: (patch: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }) => call<AiConfigInfo>("ai:setConfig", patch),
+    setConfig: (patch: {
+      apiKey?: string | null;
+      model?: string;
+      baseUrl?: string;
+      searchKey?: string | null;
+      groqKey?: string | null;
+      groqModel?: string;
+      primary?: AiProvider;
+    }) => call<AiConfigInfo>("ai:setConfig", patch),
     catalog: (force = false) => call<AiCatalog>("ai:catalog", { force }),
-    test: () => call<string>("ai:test"),
+    /** Testa a conexão (só com um provedor, se indicado; com `key`, testa a chave antes de salvar). */
+    test: (provider?: AiProvider, key?: string) => call<string>("ai:test", { provider, key }),
     chat: (requestId: string, messages: { role: "user" | "assistant"; content: string }[], mode: AiMode, attachment?: string, web?: boolean) =>
       call<boolean>("ai:chat", { requestId, messages, mode, attachment, web }),
     testSearch: (key: string) => call<number>("search:test", { key }),

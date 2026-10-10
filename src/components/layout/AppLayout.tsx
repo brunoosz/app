@@ -265,6 +265,7 @@ export function AppLayout() {
     const offData = api.on<PublicUser | null>("data:changed", (user) => {
       if (!user || !useSession.getState().user) return;
       void api.data.getAll().then((data) => applyRemoteData(user, data));
+      void useSession.getState().refreshNotifications();
     });
     const offEnded = api.on<string>("session:ended", (message) => {
       void useSession.getState().signOut();

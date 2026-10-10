@@ -33,6 +33,17 @@
   color-scheme: light;
 }
 
+/* No Windows a área de arrastar a janela ganha de qualquer elemento por cima
+   dela; com uma janela do app aberta, a barra de título não pega cliques. */
+html[data-overlay] .drag {
+  -webkit-app-region: no-drag;
+}
+/* Rede de segurança: sem nenhuma janela aberta de verdade, o que sobrou de
+   uma animação de fechar nunca bloqueia a tela. */
+html:not([data-overlay]) [data-overlay-frame] {
+  pointer-events: none !important;
+}
+
 @layer base {
   html,
   body,

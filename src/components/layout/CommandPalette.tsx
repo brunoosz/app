@@ -9,6 +9,7 @@ import { CATEGORIES, displaySymbol } from "@shared/catalog";
 import { ALL_LESSONS } from "@shared/learning";
 import { api } from "@/lib/api";
 import { isManager, useSession } from "@/store/session";
+import { OverlayFrame, useOverlay } from "@/components/ui/Overlay";
 import { ALL_NAV } from "./nav";
 
 interface Item {
@@ -31,6 +32,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
   const inputRef = useRef<HTMLInputElement>(null);
+  const presence = useOverlay(open, onClose);
 
   useEffect(() => {
     if (open) {
@@ -82,9 +84,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   };
 
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence key={presence.key} onExitComplete={presence.onExitComplete}>
       {open && (
-        <div className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] px-4 no-drag">
+        <OverlayFrame className="fixed inset-0 z-[70] flex items-start justify-center pt-[12vh] px-4 no-drag">
           <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-[4px]" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
           <motion.div
             initial={{ opacity: 0, y: -12, scale: 0.97 }}
@@ -108,7 +110,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                     setIndex((i) => Math.max(0, i - 1));
                   } else if (e.key === "Enter") {
                     go(items[index]);
-                  } else if (e.key === "Escape") onClose();
+                  }
                 }}
                 placeholder="Busque ações, FIIs, cripto, páginas ou aulas…"
                 className="flex-1 bg-transparent outline-none text-[16px] placeholder:text-muted/70"
@@ -139,7 +141,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               })}
             </div>
           </motion.div>
-        </div>
+        </OverlayFrame>
       )}
     </AnimatePresence>,
     document.body

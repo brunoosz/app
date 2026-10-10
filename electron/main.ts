@@ -13,7 +13,12 @@ const isDev = process.argv.includes("--dev");
 const DEV_URL = "http://localhost:5173";
 
 if (process.env.INVESTA_USER_DATA) app.setPath("userData", process.env.INVESTA_USER_DATA);
-if (process.platform === "win32") app.setAppUserModelId("com.investa.app");
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.investa.app");
+  // O Chromium às vezes acha que a janela está coberta por outra e para de
+  // desenhar: a tela fica parada e os cliques parecem não funcionar.
+  app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

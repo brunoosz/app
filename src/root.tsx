@@ -5,6 +5,7 @@ import "@fontsource-variable/inter";
 import "./index.css";
 import { initialTheme } from "@/store/ui";
 import App from "./App";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { installAutoFit } from "@/lib/autofit";
 import { loadIconVariant } from "@/lib/appIcon";
 
@@ -14,7 +15,9 @@ export function renderApp(): void {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <HashRouter>
-        <App />
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
       </HashRouter>
     </React.StrictMode>
   );

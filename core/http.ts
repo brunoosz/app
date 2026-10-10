@@ -14,20 +14,20 @@ let browserFetch: FetchImpl | null = null;
 let cacheFiles: FileStore | null = null;
 let streamFetch: FetchImpl | null = null;
 
-let bufferedCheck: () => boolean = () => false;
+let bufferedCheck: (url: string) => boolean = () => false;
 
 /**
  * No celular, a IA usa o fetch do WebView para receber a resposta em streaming;
- * quando ele não está disponível, a rede nativa entrega a resposta inteira de
- * uma vez ("buffered"), e a IA espera mais pelo primeiro trecho.
+ * quando ele não está disponível para aquele servidor, a rede nativa entrega a
+ * resposta inteira de uma vez ("buffered"), e a IA espera mais por ela.
  */
-export function setStreamFetch(fn: FetchImpl, buffered?: () => boolean): void {
+export function setStreamFetch(fn: FetchImpl, buffered?: (url: string) => boolean): void {
   streamFetch = fn;
   if (buffered) bufferedCheck = buffered;
 }
 
-export function isBufferedStream(): boolean {
-  return bufferedCheck();
+export function isBufferedStream(url: string): boolean {
+  return bufferedCheck(url);
 }
 
 export function fetchStream(url: string, init: RequestInit): Promise<Response> {

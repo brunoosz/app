@@ -1,9 +1,10 @@
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { TriangleAlert, X } from "lucide-react";
 import clsx from "clsx";
 import { Button } from "./Button";
+import { OverlayFrame, useOverlay } from "./Overlay";
 
 export function Sheet({
   open,
@@ -22,21 +23,13 @@ export function Sheet({
   footer?: ReactNode;
   width?: "sm" | "md" | "lg" | "xl";
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
+  const presence = useOverlay(open, onClose);
   const max = { sm: "md:max-w-sm", md: "md:max-w-lg", lg: "md:max-w-2xl", xl: "md:max-w-4xl" }[width];
 
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence key={presence.key} onExitComplete={presence.onExitComplete}>
       {open && (
-        <motion.div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-6 no-drag" initial={{ opacity: 1 }} exit={{ opacity: 1 }}>
+        <OverlayFrame className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-6 no-drag">
           <motion.div
             className="absolute inset-0 bg-black/45 backdrop-blur-[6px]"
             onClick={onClose}
@@ -68,7 +61,7 @@ export function Sheet({
             <div className="px-6 pb-5 overflow-y-auto">{children}</div>
             {footer && <div className="px-6 py-4 border-t border-line/10 flex items-center justify-end gap-2">{footer}</div>}
           </motion.div>
-        </motion.div>
+        </OverlayFrame>
       )}
     </AnimatePresence>,
     document.body

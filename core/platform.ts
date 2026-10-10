@@ -17,6 +17,7 @@ export interface Secrets {
 export interface AiFileConfig {
   nvidiaApiKey?: string;
   apiKey?: string;
+  groqApiKey?: string;
   model?: string;
   baseUrl?: string;
 }

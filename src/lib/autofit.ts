@@ -19,7 +19,12 @@ function fit(el: HTMLElement): void {
   el.dataset.fitKey = key;
   el.style.fontSize = "";
   el.style.whiteSpace = "nowrap";
-  let size = base;
+  const width = el.scrollWidth;
+  if (width <= avail + 1) return;
+  // A largura do texto acompanha o tamanho da fonte: começa perto do certo e
+  // ajusta de 1 em 1, em vez de medir a tela a cada pixel.
+  let size = Math.max(MIN_PX, Math.floor((base * avail) / width));
+  el.style.fontSize = `${size}px`;
   while (el.scrollWidth > avail + 1 && size > MIN_PX) {
     size -= 1;
     el.style.fontSize = `${size}px`;
@@ -44,23 +49,39 @@ export function installAutoFit(): void {
     for (const e of entries) for (const el of (e.target as HTMLElement).querySelectorAll<HTMLElement>(SELECTOR)) fit(el);
   });
   const seen = new WeakSet<Element>();
+  const visit = (el: HTMLElement) => {
+    fit(el);
+    const card = el.closest(".surface");
+    if (card && !seen.has(card)) {
+      seen.add(card);
+      resize.observe(card);
+    }
+  };
+  // Só olha o card (ou o trecho) que mudou. Números animados e a resposta do
+  // Assistente mudam a cada quadro; varrer a tela toda a cada vez pesa no celular.
+  const dirty = new Set<Element>();
   let queued = false;
   const scan = () => {
     queued = false;
     tagMoney();
-    for (const el of document.querySelectorAll<HTMLElement>(SELECTOR)) {
-      fit(el);
-      const card = el.closest(".surface");
-      if (card && !seen.has(card)) {
-        seen.add(card);
-        resize.observe(card);
-      }
+    const roots = [...dirty];
+    dirty.clear();
+    for (const root of roots) {
+      if (!root.isConnected) continue;
+      const scope = root.closest(".surface") ?? root;
+      if (scope.matches(SELECTOR)) visit(scope as HTMLElement);
+      for (const el of scope.querySelectorAll<HTMLElement>(SELECTOR)) visit(el);
     }
   };
-  new MutationObserver(() => {
+  const mark = (node: Node) => {
+    const el = node instanceof Element ? node : node.parentElement;
+    if (el) dirty.add(el);
     if (queued) return;
     queued = true;
     requestAnimationFrame(scan);
+  };
+  new MutationObserver((records) => {
+    for (const r of records) mark(r.target);
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
-  scan();
+  mark(document.body);
 }

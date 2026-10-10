@@ -166,6 +166,8 @@ export interface PriceAlert {
 export interface AlertRuntimeState {
   fired: boolean;
   firedAt?: string;
+  /** Última mudança (disparo ou rearme), para juntar o estado de dois aparelhos. */
+  changedAt?: string;
   lastValue?: number;
 }
 
@@ -174,6 +176,8 @@ export type Tone = "positive" | "negative" | "neutral" | "info";
 
 export interface AppNotification {
   id: string;
+  /** Chave da ocorrência (a mesma em todos os aparelhos): um aviso com esta chave nunca é dado de novo. */
+  key?: string;
   type: NotificationType;
   title: string;
   message: string;
@@ -230,6 +234,10 @@ export interface ChatMessage {
   createdAt: string;
   error?: boolean;
   mode?: AiMode;
+  /** Conversa a que a mensagem pertence (as antigas, sem id, ficam numa conversa por modo). */
+  conversationId?: string;
+  /** Modelo que respondeu, para o Dono ver discretamente. */
+  model?: string;
   /** A sugestão de "lembrar" desta resposta já foi salva ou ignorada. */
   memoryHandled?: boolean;
 }
@@ -552,16 +560,28 @@ export interface BanksData {
   updatedAt: string;
 }
 
+export type AiProvider = "nvidia" | "groq";
+
 export interface AiConfigInfo {
+  /** Alguma chave de IA configurada (Groq ou NVIDIA). */
   hasKey: boolean;
   /** Só o Dono vê e muda a configuração (modelo, chave, erros técnicos). */
   canManage: boolean;
   /** "auto" ou o id do modelo escolhido. Só para o Dono. */
   choice?: string;
-  /** Modelo em uso agora. Só para o Dono. */
+  /** Modelo que responde primeiro agora. Só para o Dono. */
   model?: string;
+  /** Nome amigável do modelo que responde primeiro, com o provedor (ex.: "Llama 3.3 70B · Groq"). */
   modelLabel?: string;
+  hasNvidia?: boolean;
   keyPreview?: string;
+  /** Chave grátis da Groq (bem mais rápida). */
+  hasGroq?: boolean;
+  groqPreview?: string;
+  /** "auto" ou o id do modelo da Groq escolhido. */
+  groqChoice?: string;
+  /** Qual provedor tenta primeiro quando os dois estão configurados. */
+  primary?: AiProvider;
   baseUrl?: string;
   source?: "app" | "arquivo" | "ambiente" | null;
   catalogUpdatedAt?: string;
@@ -583,6 +603,8 @@ export interface AiCatalog {
   models: AiModelInfo[];
   best?: string;
   updatedAt?: string;
+  /** Modelos da Groq disponíveis (quando há chave da Groq). */
+  groq?: AiModelInfo[];
 }
 
 export interface AiChatRequest {
@@ -597,7 +619,8 @@ export interface AiChatRequest {
 
 export interface AiEvent {
   requestId: string;
-  type: "chunk" | "done" | "error" | "context";
+  /** "model": nome do modelo que está respondendo (só para o Dono); "replace": texto inteiro corrigido (trecho em inglês traduzido). */
+  type: "chunk" | "done" | "error" | "context" | "model" | "replace";
   data?: string;
 }
 
@@ -653,11 +676,12 @@ export interface DealCheck {
 /** Evento da IA para a aba de Logs do Dono. */
 export interface AiLogEntry {
   at: string;
-  kind: "ok" | "erro" | "troca" | "cancelado";
+  /** "aviso": algo que o app corrigiu sozinho (resposta em inglês, resposta longa continuada). */
+  kind: "ok" | "erro" | "troca" | "cancelado" | "aviso";
   model: string;
   /** Código interno (AI_DOWN, AI_SLOW, AI_AUTH…). */
   code?: string;
-  /** Código HTTP da NVIDIA (404, 429, 500…). */
+  /** Código HTTP do provedor (404, 429, 500…). */
   status?: number;
   message?: string;
   /** Trecho da resposta do servidor. */

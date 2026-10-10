@@ -281,7 +281,7 @@ function MyAlerts({ openNew }: { openNew: (symbol?: string) => void }) {
                   ) : (
                     <Badge>Pausado</Badge>
                   )}
-                  {fired && !a.repeat && (
+                  {fired && !a.repeat && a.kind !== "lembrete" && (
                     <Button size="icon-sm" variant="ghost" icon={RotateCcw} title="Reativar" onClick={() => void api.alerts.rearm(a.id).then(() => state.reload())} />
                   )}
                   <Toggle checked={a.active} onChange={(v) => update("alerts", (l) => l.map((x) => (x.id === a.id ? { ...x, active: v } : x)))} />

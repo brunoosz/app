@@ -7,6 +7,7 @@ import type { PublicUser, Role, UserDataMap, UserStatus } from "@shared/types";
 import type { Store, UserRecord } from "./store";
 import { AppError } from "./auth";
 import { fetchWithTimeout } from "./http";
+import { INBOX_KEY, isEmptyInbox, mergeInbox, parseInbox, pruneInbox, sameInbox, sameItems } from "./inbox";
 
 declare const __INVESTA_CLOUD_URL__: string | undefined;
 declare const __INVESTA_CLOUD_KEY__: string | undefined;
@@ -59,7 +60,20 @@ export interface CloudState {
   linked?: Record<string, boolean>;
   aiUpdatedAt?: string;
   /** Configuração da IA que o Dono mudou e ainda não chegou à nuvem (sem internet). */
-  aiPending?: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null };
+  aiPending?: AiCloudConfig;
+}
+
+/** Configuração da IA guardada na nuvem (uma para todas as contas). */
+export interface AiCloudConfig {
+  apiKey?: string | null;
+  model?: string;
+  baseUrl?: string;
+  searchKey?: string | null;
+  groqKey?: string | null;
+  groqModel?: string;
+  primary?: "nvidia" | "groq";
+  /** Quando o Dono mudou; a versão mais nova vence. */
+  changedAt?: string;
 }
 
 class NetworkError extends Error {}
@@ -249,7 +263,7 @@ export class CloudService {
     const user = this.adopt(p, password, local.hash);
     if (migrated) {
       // Conta criada antes da nuvem: os dados deste aparelho sobem.
-      this.markDirty(user.id, Object.keys(this.store.rawData(user.id)));
+      this.markDirty(user.id, [...Object.keys(this.store.rawData(user.id)), INBOX_KEY]);
     }
     await this.pull(user.id, p).catch(() => undefined);
     void this.request(`/rest/v1/profiles?id=eq.${user.id}`, { method: "PATCH", token: tokens.access, body: { last_login_at: new Date().toISOString() } }).catch(() => undefined);
@@ -297,7 +311,8 @@ export class CloudService {
   // (gastos, faturas, metas…) mudou; o envio só vale se a nuvem ainda estiver
   // na versão que o aparelho conhece; se outro aparelho mudou antes, o app
   // junta as duas versões (as partes mudadas aqui + o resto da nuvem) e envia
-  // de novo.
+  // de novo. Os avisos (notificações, o que já foi avisado e o estado dos
+  // alertas) vão juntos, em INBOX_KEY, e sempre se somam (core/inbox.ts).
 
   markDirty(userId: string, keys: string[]): void {
     if (!keys.length) return;
@@ -346,9 +361,11 @@ export class CloudService {
       }
       const sent = { ...dirty };
       const token = await this.token(userId);
+      // O documento da nuvem é trocado inteiro, então os avisos vão sempre junto.
+      const data = { ...this.store.rawData(userId), [INBOX_KEY]: pruneInbox(this.store.inbox(userId)) };
       const rows = await this.request<CloudProfile[]>(
         `/rest/v1/profiles?id=eq.${userId}&data_updated_at=eq.${encodeURIComponent(synced)}&select=data_updated_at`,
-        { method: "PATCH", token, prefer: "return=representation", body: { data: this.store.rawData(userId), data_updated_at: new Date().toISOString() } }
+        { method: "PATCH", token, prefer: "return=representation", body: { data, data_updated_at: new Date().toISOString() } }
       );
       if (!rows.length) {
         // Outro aparelho mudou a nuvem antes: junta e tenta de novo.
@@ -382,8 +399,22 @@ export class CloudService {
     }
     const synced = this.state.syncedAt?.[userId];
     const dirty = this.dirtyOf(userId);
-    const localData = this.store.rawData(userId) as Record<string, unknown>;
-    const remote = (p.data ?? {}) as Record<string, unknown>;
+    const localData = { ...this.store.rawData(userId) } as Record<string, unknown>;
+    const remote = { ...(p.data ?? {}) } as Record<string, unknown>;
+    const remoteInbox = parseInbox(remote[INBOX_KEY]);
+    delete localData[INBOX_KEY];
+    delete remote[INBOX_KEY];
+    if (p.data_updated_at !== synced || !Object.keys(remote).length) {
+      // Junta os avisos: o que foi lido ou apagado em qualquer aparelho fica
+      // lido ou apagado, e o que já foi avisado não é avisado de novo aqui.
+      const mine = this.store.inbox(userId);
+      const inbox = remoteInbox ? mergeInbox(mine, remoteInbox) : mine;
+      if (!sameInbox(inbox, mine)) {
+        this.store.setInbox(userId, inbox);
+        if (!sameItems(inbox.items, mine.items)) changed = true;
+      }
+      if (remoteInbox ? !sameInbox(inbox, remoteInbox) : !isEmptyInbox(inbox)) this.markDirty(userId, [INBOX_KEY]);
+    }
     if (!Object.keys(remote).length) {
       // Nuvem vazia (conta nova ou recém-migrada): tudo daqui sobe.
       this.state.syncedAt = { ...(this.state.syncedAt ?? {}), [userId]: p.data_updated_at };
@@ -475,8 +506,8 @@ export class CloudService {
 
   // ---- configuração da IA (uma para todas as contas) ----
 
-  async pullAi(userId: string, force = false): Promise<{ apiKey?: string; model?: string; baseUrl?: string; searchKey?: string | null } | null> {
-    const rows = await this.request<{ ai: { apiKey?: string; model?: string; baseUrl?: string; searchKey?: string | null }; updated_at: string }[]>("/rest/v1/app_settings?id=eq.1&select=ai,updated_at", {
+  async pullAi(userId: string, force = false): Promise<AiCloudConfig | null> {
+    const rows = await this.request<{ ai: AiCloudConfig; updated_at: string }[]>("/rest/v1/app_settings?id=eq.1&select=ai,updated_at", {
       token: await this.token(userId),
     });
     const row = rows[0];
@@ -486,7 +517,7 @@ export class CloudService {
     return row.ai ?? {};
   }
 
-  async pushAi(userId: string, ai: { apiKey?: string | null; model?: string; baseUrl?: string; searchKey?: string | null }): Promise<void> {
+  async pushAi(userId: string, ai: AiCloudConfig): Promise<void> {
     const rows = await this.request<{ updated_at: string }[]>("/rest/v1/app_settings?id=eq.1", {
       method: "PATCH",
       token: await this.token(userId),

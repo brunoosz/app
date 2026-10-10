@@ -19,6 +19,7 @@ import { scrypt } from "@noble/hashes/scrypt.js";
 import { Backend } from "../../core/backend";
 import { setStreamFetch } from "../../core/http";
 import { randomHexWeb, toHex, type FileStore, type Platform } from "../../core/platform";
+import { closeTopOverlay } from "../lib/overlays";
 
 const FILES = ["investa-data.json", "investa-data.bak.json", "cache-tesouro.json", "cache-credito.json"];
 
@@ -67,11 +68,20 @@ export async function installMobileBridge(): Promise<void> {
   });
 
   // A IA responde em streaming. Tenta primeiro o fetch do próprio WebView (que
-  // entrega a resposta aos poucos); se ele falhar (CORS), usa a rede nativa,
-  // que entrega tudo de uma vez. A rede nativa não respeita o AbortSignal,
-  // então o cancelamento e o tempo-limite são feitos aqui.
+  // entrega a resposta aos poucos); se ele falhar para aquele servidor (CORS),
+  // usa a rede nativa, que entrega tudo de uma vez. Cada servidor é lembrado à
+  // parte: a Groq aceita o WebView, a NVIDIA não. A rede nativa não respeita o
+  // AbortSignal, então o cancelamento é feito aqui: a promessa termina na hora
+  // e a resposta que chegar depois é descartada.
   const webFetch = (window as unknown as { CapacitorWebFetch?: typeof fetch }).CapacitorWebFetch;
-  let webStreams: boolean | undefined = webFetch ? undefined : false;
+  const webStreams = new Map<string, boolean>();
+  const hostOf = (url: string) => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  };
   const nativeFetch = (url: string, init: RequestInit): Promise<Response> =>
     new Promise<Response>((resolve, reject) => {
       const signal = init.signal;
@@ -86,10 +96,11 @@ export async function installMobileBridge(): Promise<void> {
         data: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
         responseType: "text",
         connectTimeout: 15_000,
-        readTimeout: 120_000,
+        readTimeout: 240_000,
       })
         .then((res) => {
           signal?.removeEventListener("abort", abort);
+          if (signal?.aborted) return;
           const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
           resolve(new Response(body, { status: res.status, headers: res.headers }));
         })
@@ -100,28 +111,34 @@ export async function installMobileBridge(): Promise<void> {
     });
   setStreamFetch(
     async (url, init) => {
-      if (webFetch && webStreams !== false) {
+      const host = hostOf(url);
+      if (webFetch && webStreams.get(host) !== false) {
         try {
           const res = await webFetch(url, init);
-          webStreams = true;
+          webStreams.set(host, true);
           return res;
         } catch (err) {
           if (init.signal?.aborted) throw err;
           // Só desiste do streaming se a rede nativa funcionar (era bloqueio do WebView,
           // não falta de internet).
           const res = await nativeFetch(url, init);
-          webStreams = false;
+          webStreams.set(host, false);
           return res;
         }
       }
       return nativeFetch(url, init);
     },
-    () => webStreams !== true
+    (url) => !webFetch || webStreams.get(hostOf(url)) !== true
   );
 
   const info = await App.getInfo().catch(() => ({ version: "1.0.0" }));
   const files = await loadFiles();
-  let notificationId = 1;
+  // Id fixo por aviso: se o mesmo aviso chegar de novo, substitui o que está na barra em vez de repetir.
+  const notificationId = (key: string) => {
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = (Math.imul(31, h) + key.charCodeAt(i)) | 0;
+    return (h & 0x7fffffff) || 1;
+  };
 
   const platform: Platform = {
     kind: "mobile",
@@ -140,7 +157,7 @@ export async function installMobileBridge(): Promise<void> {
     notify(n, settings) {
       if (active || !settings.desktopNotifications) return;
       void LocalNotifications.schedule({
-        notifications: [{ id: notificationId++, title: n.title, body: n.message, smallIcon: "ic_stat_investa", extra: { link: n.link ?? "/alertas" } }],
+        notifications: [{ id: notificationId(n.key ?? n.id), title: n.title, body: n.message, smallIcon: "ic_stat_investa", extra: { link: n.link ?? "/alertas" } }],
       }).catch(() => undefined);
     },
     async saveReport(report) {
@@ -183,8 +200,9 @@ export async function installMobileBridge(): Promise<void> {
     const link = (a.notification.extra as { link?: string } | undefined)?.link;
     if (link) emit("navigate", link);
   });
-  // Botão voltar do Android: volta uma tela; na Início, minimiza.
+  // Botão voltar do Android: fecha a janela aberta; senão volta uma tela; na Início, minimiza.
   App.addListener("backButton", ({ canGoBack }) => {
+    if (closeTopOverlay()) return;
     if (canGoBack && location.hash && location.hash !== "#/") history.back();
     else void App.minimizeApp();
   });
